@@ -14,12 +14,18 @@ This pipeline:
 7. Evaluates and prints comprehensive results
 """
 
+import os
 import sys
 import time
 from typing import Dict, List
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from sklearn.calibration import calibration_curve
+from sklearn.metrics import ConfusionMatrixDisplay, RocCurveDisplay, confusion_matrix
 from sklearn.model_selection import train_test_split
 
 from src.data.loader import CATEGORICAL_COLUMNS, NUMERICAL_COLUMNS, GermanCreditLoader
@@ -250,7 +256,114 @@ def run() -> int:
         print(ate_summary.to_string(index=False))
 
     # =========================================================================
-    # 11. SUMMARY
+    # 11. VISUALIZATION OUTPUT
+    # =========================================================================
+    print_section("STEP 11: GENERATING VISUALIZATION CHARTS")
+
+    output_dir = "output/figures"
+    os.makedirs(output_dir, exist_ok=True)
+
+    plt.rcParams.update({
+        "figure.dpi": 150,
+        "axes.titlesize": 14,
+        "axes.labelsize": 12,
+        "legend.fontsize": 10,
+        "font.sans-serif": ["Microsoft YaHei", "SimHei", "DejaVu Sans"],
+        "axes.unicode_minus": False,
+    })
+
+    # ---------- Chart 1: ROC Curve ----------
+    print("  [1/5] ROC Curve ...")
+    fig, ax = plt.subplots(figsize=(7, 6))
+    RocCurveDisplay.from_predictions(y_test, y_prob, ax=ax, name="GradientBoosting")
+    ax.plot([0, 1], [0, 1], "k--", alpha=0.4, label="Random (AUC=0.5)")
+    ax.set_title(f"ROC Curve (AUC = {metrics['auc_roc']:.4f})")
+    ax.legend(loc="lower right")
+    fig.tight_layout()
+    fig.savefig(os.path.join(output_dir, "01_roc_curve.png"), bbox_inches="tight")
+    plt.close(fig)
+
+    # ---------- Chart 2: Feature Importance ----------
+    print("  [2/5] Feature Importance ...")
+    top_n = min(15, len(imp_df))
+    top_imp = imp_df.head(top_n).iloc[::-1]
+    fig, ax = plt.subplots(figsize=(10, 6))
+    colors = ["#1f77b4" if "causal" in str(f).lower() or v > 0.06 else "#7f7f7f"
+              for f, v in zip(top_imp["feature"], top_imp["importance"])]
+    ax.barh(range(len(top_imp)), top_imp["importance"].values, color=colors, height=0.65, edgecolor="white")
+    ax.set_yticks(range(len(top_imp)))
+    ax.set_yticklabels(top_imp["feature"].values, fontsize=9)
+    ax.set_xlabel("Feature Importance (Gini Gain)")
+    ax.set_title(f"Top {top_n} Feature Importance")
+    for i, v in enumerate(top_imp["importance"].values):
+        ax.text(v + 0.001, i, f"{v:.4f}", va="center", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(os.path.join(output_dir, "02_feature_importance.png"), bbox_inches="tight")
+    plt.close(fig)
+
+    # ---------- Chart 3: ATE Forest Plot ----------
+    print("  [3/5] ATE Forest Plot ...")
+    ate_entries = [
+        ("credit_amount -> default", ate_credit["ate"], ate_credit["ci_lower"], ate_credit["ci_upper"]),
+        ("duration -> default", ate_duration["ate"], ate_duration["ci_lower"], ate_duration["ci_upper"]),
+    ]
+    fig, ax = plt.subplots(figsize=(9, 4))
+    y_positions = []
+    estimates = []
+    errors_lower = []
+    errors_upper = []
+    for i, (label, ate, lo, hi) in enumerate(ate_entries):
+        y_positions.append(i)
+        estimates.append(ate)
+        errors_lower.append(ate - lo)
+        errors_upper.append(hi - ate)
+        sig_text = "p < 0.05" if (lo > 0 or hi < 0) else "n.s."
+        color = "#d62728" if (lo > 0 or hi < 0) else "#1f77b4"
+        ax.errorbar(ate, i, xerr=[[ate - lo], [hi - ate]], fmt="o", color=color,
+                    capsize=6, capthick=2, markersize=10, elinewidth=2.5)
+        ax.text(hi + 0.005, i, f"{ate:+.3f} [{lo:+.3f}, {hi:+.3f}] {sig_text}",
+                va="center", fontsize=10)
+    ax.axvline(x=0, color="gray", linestyle="--", alpha=0.6)
+    ax.set_yticks(y_positions)
+    ax.set_yticklabels([e[0] for e in ate_entries], fontsize=11)
+    ax.set_xlabel("Average Treatment Effect (ATE)")
+    ax.set_title("Causal ATE Forest Plot (PSM + 200 Bootstrap)")
+    fig.tight_layout()
+    fig.savefig(os.path.join(output_dir, "03_ate_forest.png"), bbox_inches="tight")
+    plt.close(fig)
+
+    # ---------- Chart 4: Calibration Curve ----------
+    print("  [4/5] Calibration Curve ...")
+    prob_true, prob_pred = calibration_curve(y_test, y_prob, n_bins=10, strategy="uniform")
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.plot(prob_pred, prob_true, "s-", color="#2ca02c", linewidth=2, markersize=7, label="GradientBoosting")
+    ax.plot([0, 1], [0, 1], "k--", alpha=0.4, label="Perfect Calibration")
+    ax.fill_between(prob_pred, prob_true, prob_pred, alpha=0.15, color="#2ca02c")
+    ax.set_xlabel("Mean Predicted Probability")
+    ax.set_ylabel("Fraction of Positives")
+    ax.set_title("Calibration Curve (Reliability Diagram)")
+    ax.legend(loc="lower right")
+    fig.tight_layout()
+    fig.savefig(os.path.join(output_dir, "04_calibration_curve.png"), bbox_inches="tight")
+    plt.close(fig)
+
+    # ---------- Chart 5: Confusion Matrix ----------
+    print("  [5/5] Confusion Matrix ...")
+    fig, ax = plt.subplots(figsize=(6, 5))
+    cm = confusion_matrix(y_test, y_pred)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["Good (0)", "Bad (1)"])
+    disp.plot(ax=ax, cmap="Blues", colorbar=True, values_format="d")
+    ax.set_title(f"Confusion Matrix (Acc={metrics['accuracy']:.4f}, F1={metrics['f1_score']:.4f})")
+    fig.tight_layout()
+    fig.savefig(os.path.join(output_dir, "05_confusion_matrix.png"), bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"\n  Charts saved to: {os.path.abspath(output_dir)}/")
+    for f in sorted(os.listdir(output_dir)):
+        print(f"    {f}")
+
+    # =========================================================================
+    # 12. SUMMARY
     # =========================================================================
     elapsed = time.time() - start_time
     print_section("PIPELINE COMPLETE")
