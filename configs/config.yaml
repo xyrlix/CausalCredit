@@ -1,0 +1,57 @@
+# CausalCredit Configuration
+# ==========================
+
+data:
+  home_credit_dir: "data/home-credit-default-risk/"
+  lending_club_dir: "data/lending-club/"
+  processed_dir: "data/processed/"
+  models_dir: "models/"
+
+features:
+  top_k: 80
+  target_encoding_folds: 5
+  thin_credit_threshold: 0
+
+causal:
+  ate_methods:
+    - "backdoor_regression"
+    - "backdoor_ipw"
+  refute_methods:
+    - "random_common_cause"
+    - "placebo_treatment_refuter"
+    - "data_subset_refuter"
+  refute_iterations: 100
+  cate:
+    n_estimators: 1000
+    max_depth: 8
+    min_samples_leaf: 50
+
+model:
+  lightgbm:
+    objective: "binary"
+    metric: "auc"
+    num_leaves: 63
+    max_depth: 7
+    learning_rate: 0.05
+    n_estimators: 1000
+    min_child_samples: 50
+    subsample: 0.8
+    colsample_bytree: 0.8
+    reg_alpha: 0.1
+    reg_lambda: 0.1
+    early_stopping_rounds: 50
+    random_state: 42
+  optuna:
+    n_trials: 50
+    timeout: 3600
+
+api:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 4
+  log_level: "info"
+
+frontend:
+  port: 8501
+  theme: "light"
+  api_url: "http://localhost:8000"
