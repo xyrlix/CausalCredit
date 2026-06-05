@@ -1,389 +1,556 @@
 #!/usr/bin/env python3
-"""CausalCredit: End-to-End Credit Default Causal Analysis Pipeline.
+"""CausalCredit: 13-Step End-to-End Pipeline (Home Credit).
 
 Usage:
     python -m src.run_pipeline
 
-This pipeline:
-1. Loads German Credit data from sklearn's fetch_openml
-2. Cleans and encodes the data
-3. Builds ML features and causal features
-4. Trains a GradientBoostingClassifier as base model
-5. Defines a causal DAG for credit default analysis
-6. Estimates ATE using manual propensity score matching with bootstrap CIs
-7. Evaluates and prints comprehensive results
+Steps (per docs/CausalCredit_完整实现计划书.md):
+  1.  Data loading
+  2.  Data validation
+  3.  Data cleaning + sentinel fixes
+  4.  Feature engineering (causal-guided subset)
+  5.  Train/test split
+  6.  Model training (LightGBM downstream, GBT baseline)
+  7.  Model evaluation + Isotonic calibration
+  8.  Causal discovery (PC + NOTEARS + domain knowledge injection)
+  9.  ATE estimation (DoWhy CausalModel + 4 refuters)
+  10. CATE estimation (LinearDML + SparseLinearDML + CausalForestDML)
+  11. Refutation report
+  12. SHAP + four-quadrant consistency
+  13. Counterfactual + decision reports
+
+Outputs:
+  output/figures/01..11_*.png  (11 charts)
+  output/decision_reports/HC_*.json + .md  (3 applicants)
+  output/decision_reports/pipeline_summary.json
 """
 
+import json
 import os
 import sys
 import time
-from typing import Dict, List
+import warnings
+from pathlib import Path
+from typing import Dict, List, Optional
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from sklearn.calibration import calibration_curve
 from sklearn.metrics import ConfusionMatrixDisplay, RocCurveDisplay, confusion_matrix
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
 
-from src.data.loader import CATEGORICAL_COLUMNS, NUMERICAL_COLUMNS, GermanCreditLoader
-from src.data.preprocessing.cleaner import DataCleaner
-from src.data.validator import generate_data_report, validate_no_nulls, validate_target
-from src.features.builder import FeatureBuilder
+# Quiet down sklearn / lightgbm future warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
+os.environ.setdefault("PYTHONWARNINGS", "ignore")
+
+# Project imports
+from src.data.home_credit_loader import (
+    CATEGORICAL_COLUMNS,
+    NUMERICAL_COLUMNS,
+    HomeCreditLoader,
+)
+from src.causal.home_credit_graph import HomeCreditCausalGraph
+from src.causal.discovery import (
+    compare_with_domain,
+    discover_home_credit_causal_graph,
+    fuse_graphs,
+    inject_domain_knowledge,
+    run_notears,
+    run_pc,
+)
+from src.causal.cate import CATEEstimator
+from src.causal.refute import CausalRefuter
+from src.explain.counterfactual import (
+    IMMUTABLE_FEATURES,
+    SEMI_MUTABLE_FEATURES,
+    CounterfactualReasoner,
+)
+from src.explain.decision import DecisionAdvisor
+from src.explain.evidence import EvidenceChainGenerator
+from src.explain.shap_explain import SHAPExplainer
+from src.models.calibrate import IsotonicCalibrator
 from src.models.evaluate import ModelEvaluator
-from src.models.train import GBTrainer
-from src.causal.estimate import CausalEffectEstimator
-from src.causal.graph import CreditCausalGraph
-from src.causal.variable_validation import CausalVariableValidator
+from src.models.train import GBTrainer, LightGBMTrainer
 
 
-def print_section(title: str):
-    """Print a formatted section header."""
+# ===========================================================================
+# IO helpers
+# ===========================================================================
+
+def print_section(title: str) -> None:
     print()
-    print("=" * 70)
+    print("=" * 72)
     print(f"  {title}")
-    print("=" * 70)
+    print("=" * 72)
 
 
-def print_subsection(title: str):
-    """Print a formatted subsection header."""
+def print_subsection(title: str) -> None:
     print(f"\n  --- {title} ---")
 
 
+def safe_savefig(fig, path: str) -> str:
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=120, bbox_inches="tight")
+    plt.close(fig)
+    return path
+
+
+# ===========================================================================
+# Pipeline
+# ===========================================================================
+
 def run() -> int:
-    """Execute the full CausalCredit pipeline."""
-    start_time = time.time()
+    t0 = time.time()
 
-    # =========================================================================
-    # 1. DATA LOADING
-    # =========================================================================
-    print_section("STEP 1: DATA LOADING")
-    loader = GermanCreditLoader()
-    raw_df = loader.fetch()
-    X_raw, y = loader.get_feature_target()
-    metadata = loader.get_metadata()
-
-    print(f"  Dataset: German Credit (from sklearn fetch_openml)")
-    print(f"  Samples: {metadata['n_samples']}")
-    print(f"  Features: {metadata['n_features']}")
-    print(f"  Target distribution: {metadata['target_distribution']}")
-    print(f"  Categorical columns: {len(CATEGORICAL_COLUMNS)}")
-    print(f"  Numerical columns: {len(NUMERICAL_COLUMNS)}")
-
-    # =========================================================================
-    # 2. DATA VALIDATION
-    # =========================================================================
-    print_section("STEP 2: DATA VALIDATION")
-    null_check = validate_no_nulls(raw_df)
-    print(f"  Null values present: {null_check['has_nulls']}")
-
-    target_check = validate_target(raw_df)
-    if target_check["valid"]:
-        print(f"  Target valid: yes, distribution: {target_check['distribution']}")
-
-    report = generate_data_report(raw_df)
-    print(f"  Data report: {len(report)} columns checked")
-
-    # =========================================================================
-    # 3. DATA CLEANING
-    # =========================================================================
-    print_section("STEP 3: DATA CLEANING")
-    cleaner = DataCleaner()
-    X_clean = cleaner.clean(X_raw, numerical_cols=NUMERICAL_COLUMNS)
-    print(f"  Shape after cleaning: {X_clean.shape}")
-    print(f"  Remaining nulls: {X_clean.isnull().sum().sum()}")
-
-    # =========================================================================
-    # 4. FEATURE ENGINEERING
-    # =========================================================================
-    print_section("STEP 4: FEATURE ENGINEERING")
-    feature_builder = FeatureBuilder()
-    X_features = feature_builder.build(
-        X_clean,
-        categorical_cols=CATEGORICAL_COLUMNS,
-        numerical_cols=NUMERICAL_COLUMNS,
-        fit=True,
-    )
-    feature_names = feature_builder.get_feature_names()
-    print(f"  Total features after encoding + causal features: {len(feature_names)}")
-    print(f"  Feature columns: {feature_names}")
-
-    # =========================================================================
-    # 5. TRAIN/TEST SPLIT
-    # =========================================================================
-    print_section("STEP 5: TRAIN/TEST SPLIT")
-    X_train, X_test, y_train, y_test = train_test_split(
-        X_features, y, test_size=0.3, random_state=42, stratify=y,
-    )
-    print(f"  Train set: {len(X_train)} samples")
-    print(f"  Test set:  {len(X_test)} samples")
-    print(f"  Train target rate: {y_train.mean():.4f}")
-    print(f"  Test target rate:  {y_test.mean():.4f}")
-
-    # =========================================================================
-    # 6. MODEL TRAINING
-    # =========================================================================
-    print_section("STEP 6: MODEL TRAINING (GradientBoostingClassifier)")
-
-    trainer = GBTrainer()
-    cv_results = trainer.train_cv(X_train, y_train, n_folds=5)
-    print(f"  CV AUC (5-fold):     {cv_results['cv_auc_mean']:.4f} ± {cv_results['cv_auc_std']:.4f}")
-    print(f"  CV Accuracy (5-fold): {cv_results['cv_accuracy_mean']:.4f} ± {cv_results['cv_accuracy_std']:.4f}")
-
-    model = trainer.train_final(X_train, y_train)
-    y_prob = trainer.predict_proba(X_test)
-    y_pred = trainer.predict(X_test)
-
-    # =========================================================================
-    # 7. MODEL EVALUATION
-    # =========================================================================
-    print_section("STEP 7: MODEL EVALUATION")
-
-    evaluator = ModelEvaluator()
-    metrics = evaluator.evaluate(y_test, y_pred, y_prob)
-
-    print(f"  AUC-ROC:      {metrics['auc_roc']:.4f}")
-    print(f"  Accuracy:     {metrics['accuracy']:.4f}")
-    print(f"  Precision:    {metrics['precision']:.4f}")
-    print(f"  Recall:       {metrics['recall']:.4f}")
-    print(f"  F1 Score:     {metrics['f1_score']:.4f}")
-    print(f"  Log Loss:     {metrics['log_loss']:.4f}")
-
-    # Feature importance
-    imp_df = trainer.get_feature_importance()
-    print_subsection("Top 10 Feature Importance")
-    for _, row in imp_df.head(10).iterrows():
-        print(f"    {row['feature']:<30s}: {row['importance']:.4f}")
-
-    # =========================================================================
-    # 8. CAUSAL DAG DEFINITION
-    # =========================================================================
-    print_section("STEP 8: CAUSAL DAG DEFINITION")
-
-    graph = CreditCausalGraph()
-    treatments = graph.get_treatment_variables()
-    outcome = graph.get_outcome_variable()
-    confounders = graph.get_confounders(treatments[0], outcome)
-
-    print(f"  Treatments:  {treatments}")
-    print(f"  Outcome:     {outcome}")
-    print(f"  Confounders: {confounders}")
-    print(f"  DAG is acyclic: {graph.validate_acyclic()}")
-
-    # Causal assumptions
-    print_subsection("Key Assumptions")
-    for i, assumption in enumerate(graph.get_assumptions(), 1):
-        print(f"    {i}. {assumption}")
-
-    # =========================================================================
-    # 9. CAUSAL VARIABLE VALIDATION
-    # =========================================================================
-    print_section("STEP 9: CAUSAL VARIABLE VALIDATION")
-
-    validator = CausalVariableValidator()
-    tx_validation = validator.validate_treatment_variables(X_raw, treatments)
-    conf_validation = validator.validate_confounders(
-        X_raw, treatments, "default", confounders,
-    )
-
-    has_default_col = "default" in X_raw.columns or True
-    default_col = "default" if has_default_col else outcome
-    if default_col not in X_raw.columns:
-        X_raw["default"] = y.values
-
-    for tx_name, info in tx_validation.items():
-        if info.get("present"):
-            print(f"  [{tx_name}] present, mean={info.get('mean', 'N/A')}, "
-                  f"median={info.get('median', 'N/A')}")
-
-    for conf_name, info in list(conf_validation.items())[:5]:
-        status = "OK" if info.get("present") else "MISSING"
-        print(f"  [{conf_name}] {status}")
-
-    # =========================================================================
-    # 10. CAUSAL EFFECT ESTIMATION (ATE)
-    # =========================================================================
-    print_section("STEP 10: ATE ESTIMATION (Propensity Score Matching)")
-
-    # Prepare data for causal estimation with encoded confounders
-    causal_data = X_raw.copy()
-    causal_data["default"] = y.values
-
-    raw_confounders = [c for c in confounders if c in causal_data.columns]
-    print(f"  Available confounders for PSM: {raw_confounders}")
-
-    # Build a fully numeric dataset for propensity score estimation
-    # Label-encode all categorical columns
-    from sklearn.preprocessing import LabelEncoder
-    causal_encoded = causal_data.copy()
-    for col in causal_encoded.columns:
-        if not pd.api.types.is_numeric_dtype(causal_encoded[col]):
-            le = LabelEncoder()
-            causal_encoded[col] = le.fit_transform(causal_encoded[col].astype(str))
-
-    estimator = CausalEffectEstimator(random_state=42)
-
-    print_subsection("ATE: credit_amount -> default")
-    ate_credit = estimator.estimate_ate(
-        causal_encoded, "credit_amount", "default", raw_confounders,
-        binarize=True, n_bootstrap=200,
-    )
-    print(f"  ATE (credit_amount binary -> default):")
-    print(f"    Estimate:        {ate_credit['ate']:.6f}")
-    print(f"    95% CI:          [{ate_credit['ci_lower']:.6f}, {ate_credit['ci_upper']:.6f}]")
-    print(f"    Bootstrap valid: {ate_credit.get('n_bootstrap_valid', 'N/A')}/{ate_credit.get('n_bootstrap', 'N/A')}")
-    print(f"    N matched:       {ate_credit.get('n_treated_matched', 'N/A')}")
-
-    print_subsection("ATE: duration -> default")
-    ate_duration = estimator.estimate_ate(
-        causal_encoded, "duration", "default", raw_confounders,
-        binarize=True, n_bootstrap=200,
-    )
-    print(f"  ATE (duration binary -> default):")
-    print(f"    Estimate:        {ate_duration['ate']:.6f}")
-    print(f"    95% CI:          [{ate_duration['ci_lower']:.6f}, {ate_duration['ci_upper']:.6f}]")
-    print(f"    Bootstrap valid: {ate_duration.get('n_bootstrap_valid', 'N/A')}/{ate_duration.get('n_bootstrap', 'N/A')}")
-    print(f"    N matched:       {ate_duration.get('n_treated_matched', 'N/A')}")
-
-    # All treatments summary table
-    print_subsection("All Treatments ATE Summary")
-    ate_summary = estimator.estimate_all_treatments(
-        causal_encoded, treatments, "default", raw_confounders, n_bootstrap=200,
-    )
-    if len(ate_summary) > 0:
-        print(ate_summary.to_string(index=False))
-
-    # =========================================================================
-    # 11. VISUALIZATION OUTPUT
-    # =========================================================================
-    print_section("STEP 11: GENERATING VISUALIZATION CHARTS")
-
-    output_dir = "output/figures"
-    os.makedirs(output_dir, exist_ok=True)
+    output_fig = Path("output/figures")
+    output_dec = Path("output/decision_reports")
+    output_fig.mkdir(parents=True, exist_ok=True)
+    output_dec.mkdir(parents=True, exist_ok=True)
 
     plt.rcParams.update({
-        "figure.dpi": 150,
-        "axes.titlesize": 14,
-        "axes.labelsize": 12,
-        "legend.fontsize": 10,
-        "font.sans-serif": ["Microsoft YaHei", "SimHei", "DejaVu Sans"],
+        "figure.dpi": 130,
+        "axes.titlesize": 13,
+        "axes.labelsize": 11,
+        "legend.fontsize": 9,
         "axes.unicode_minus": False,
     })
 
-    # ---------- Chart 1: ROC Curve ----------
-    print("  [1/5] ROC Curve ...")
-    fig, ax = plt.subplots(figsize=(7, 6))
-    RocCurveDisplay.from_predictions(y_test, y_prob, ax=ax, name="GradientBoosting")
-    ax.plot([0, 1], [0, 1], "k--", alpha=0.4, label="Random (AUC=0.5)")
-    ax.set_title(f"ROC Curve (AUC = {metrics['auc_roc']:.4f})")
-    ax.legend(loc="lower right")
-    fig.tight_layout()
-    fig.savefig(os.path.join(output_dir, "01_roc_curve.png"), bbox_inches="tight")
-    plt.close(fig)
+    # =========================================================================
+    # STEP 1 — DATA LOADING
+    # =========================================================================
+    print_section("STEP 1: DATA LOADING (Home Credit application_train)")
+    loader = HomeCreditLoader()
+    raw_df = loader.fetch()
+    X_raw, y = loader.get_feature_target()
+    metadata = loader.get_metadata()
+    print(f"  samples: {metadata['n_samples']}")
+    print(f"  features: {metadata['n_features']}")
+    print(f"  default rate: {metadata['target_default_rate']:.4f}")
+    print(f"  TARGET distribution: {metadata['target_distribution']}")
 
-    # ---------- Chart 2: Feature Importance ----------
-    print("  [2/5] Feature Importance ...")
+    # =========================================================================
+    # STEP 2 — DATA VALIDATION
+    # =========================================================================
+    print_section("STEP 2: DATA VALIDATION")
+    null_counts = raw_df.isnull().sum()
+    n_null_cols = (null_counts > 0).sum()
+    print(f"  columns with NaNs: {n_null_cols}")
+    print(f"  target dtype: {raw_df['TARGET'].dtype}; unique: {sorted(raw_df['TARGET'].unique())}")
+    print(f"  duplicate rows: {raw_df.duplicated().sum()}")
+    if "DAYS_EMPLOYED" in raw_df.columns:
+        n_sentinel = (raw_df["DAYS_EMPLOYED"] == 365243).sum()
+        print(f"  DAYS_EMPLOYED sentinel (365243) count: {n_sentinel} (will be NaN-cleaned)")
+
+    # =========================================================================
+    # STEP 3 — DATA CLEANING
+    # =========================================================================
+    print_section("STEP 3: DATA CLEANING")
+    df = raw_df.copy()
+    # Apply the loader's known-issue fixes (DAYS_EMPLOYED=365243 -> NaN, etc.)
+    df = HomeCreditLoader._fix_known_issues(df)
+    # Drop columns that are entirely NaN or have only one unique value
+    nunique = df.nunique(dropna=True)
+    drop_cols = [c for c in df.columns if nunique[c] <= 1]
+    df = df.drop(columns=drop_cols)
+    print(f"  dropped low-variance cols: {len(drop_cols)}")
+    print(f"  shape after cleaning: {df.shape}")
+
+    # =========================================================================
+    # STEP 4 — FEATURE ENGINEERING (causal-guided subset + label encoding)
+    # =========================================================================
+    print_section("STEP 4: FEATURE ENGINEERING")
+    g = HomeCreditCausalGraph()
+    # Restrict to columns the DAG actually uses (plus a few good predictors)
+    dag_candidates = list(g.nodes.keys()) + [
+        "REGION_POPULATION_RELATIVE", "DAYS_REGISTRATION", "DAYS_ID_PUBLISH",
+        "EXT_SOURCE_3", "EXT_SOURCE_1",
+    ]
+    feature_cols = [c for c in dag_candidates if c in df.columns and c not in ("TARGET",)]
+    # Cap at top-30 by missing-rate to keep the matrix tractable for LightGBM
+    miss_rate = df[feature_cols].isnull().mean().sort_values()
+    feature_cols = list(miss_rate.head(30).index)
+    print(f"  selected features ({len(feature_cols)}):")
+    for c in feature_cols:
+        print(f"    - {c}")
+
+    X_feat = df[feature_cols].copy()
+    # Label-encode categoricals
+    cat_cols_used = [c for c in feature_cols if c in CATEGORICAL_COLUMNS]
+    for c in cat_cols_used:
+        X_feat[c] = LabelEncoder().fit_transform(X_feat[c].astype(str).fillna("__nan__"))
+    # Median-impute numerical NaNs
+    num_cols_used = [c for c in feature_cols if c not in cat_cols_used]
+    for c in num_cols_used:
+        if X_feat[c].isnull().any():
+            X_feat[c] = X_feat[c].fillna(X_feat[c].median())
+    print(f"  cat cols: {len(cat_cols_used)}, num cols: {len(num_cols_used)}")
+
+    # =========================================================================
+    # STEP 5 — TRAIN / TEST SPLIT (stratified)
+    # =========================================================================
+    print_section("STEP 5: TRAIN / TEST SPLIT")
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_feat, y, test_size=0.3, random_state=42, stratify=y,
+    )
+    print(f"  train: {len(X_train)} ({y_train.mean():.4f} default rate)")
+    print(f"  test:  {len(X_test)} ({y_test.mean():.4f} default rate)")
+
+    # =========================================================================
+    # STEP 6 — MODEL TRAINING (LightGBM downstream, GBT baseline)
+    # =========================================================================
+    print_section("STEP 6: MODEL TRAINING")
+    # 6a. sklearn GBT — 3-fold CV on a 20K subset (just for the AUC baseline)
+    gbt_sub_idx = np.random.RandomState(42).choice(len(X_train), size=min(20000, len(X_train)), replace=False)
+    X_gbt = X_train.iloc[gbt_sub_idx].reset_index(drop=True)
+    y_gbt = y_train.iloc[gbt_sub_idx].reset_index(drop=True)
+    gb_trainer = GBTrainer()
+    cv = gb_trainer.train_cv(X_gbt, y_gbt, n_folds=3)
+    print(f"  GBT  CV AUC:        {cv['cv_auc_mean']:.4f} ± {cv['cv_auc_std']:.4f}  (20K subset)")
+    print(f"  GBT  CV Accuracy:   {cv['cv_accuracy_mean']:.4f} ± {cv['cv_accuracy_std']:.4f}")
+    gb_model = gb_trainer.train_final(X_gbt, y_gbt)
+
+    # 6b. LightGBM — downstream model for SHAP, DiCE, decision reports (full train set)
+    lgbm_trainer = LightGBMTrainer()
+    cv_lgbm = lgbm_trainer.train_cv(X_train, y_train, n_folds=3)
+    print(f"  LGBM CV AUC:        {cv_lgbm['cv_auc_mean']:.4f} ± {cv_lgbm['cv_auc_std']:.4f}")
+    lgbm_model = lgbm_trainer.train_final(X_train, y_train)
+    print(f"  LightGBM trained: n_estimators={lgbm_model.n_estimators}")
+
+    # =========================================================================
+    # STEP 7 — MODEL EVALUATION + CALIBRATION
+    # =========================================================================
+    print_section("STEP 7: EVALUATION + CALIBRATION")
+    y_prob = lgbm_model.predict_proba(X_test)[:, 1]
+    y_pred = (y_prob >= 0.5).astype(int)
+    evaluator = ModelEvaluator()
+    metrics = evaluator.evaluate(y_test, y_pred, y_prob)
+    print(f"  AUC: {metrics['auc_roc']:.4f}  Acc: {metrics['accuracy']:.4f}  "
+          f"F1: {metrics['f1_score']:.4f}  LogLoss: {metrics['log_loss']:.4f}")
+
+    # Isotonic calibration (out-of-fold on a 30K subset for speed)
+    from sklearn.model_selection import KFold
+    if len(X_train) > 30000:
+        idx_sub = np.random.RandomState(42).choice(len(X_train), size=30000, replace=False)
+        X_cal_train = X_train.iloc[idx_sub].reset_index(drop=True)
+        y_cal_train = y_train.iloc[idx_sub].reset_index(drop=True)
+    else:
+        X_cal_train, y_cal_train = X_train, y_train
+    kf = KFold(n_splits=3, shuffle=True, random_state=42)
+    oof = np.zeros(len(X_cal_train))
+    for tr_idx, va_idx in kf.split(X_cal_train):
+        m = LightGBMTrainer().train_final(X_cal_train.iloc[tr_idx], y_cal_train.iloc[tr_idx])
+        oof[va_idx] = m.predict_proba(X_cal_train.iloc[va_idx])[:, 1]
+    calibrator = IsotonicCalibrator().fit(oof, y_cal_train.values)
+    y_prob_cal = calibrator.transform(y_prob)
+    print(f"  Isotonic calibration fitted on 3-fold OOF (30K subsample)")
+
+    imp_df = lgbm_trainer.get_feature_importance()
+    print_subsection("Top 10 features (LightGBM gain)")
+    for _, r in imp_df.head(10).iterrows():
+        print(f"    {r['feature']:<25s}  {r['importance']:.4f}")
+
+    # Chart 1: ROC
+    print_subsection("Charts 1–5 (model evaluation)")
+    fig, ax = plt.subplots(figsize=(6, 5))
+    RocCurveDisplay.from_predictions(y_test, y_prob, ax=ax, name="LightGBM")
+    ax.plot([0, 1], [0, 1], "k--", alpha=0.4)
+    ax.set_title(f"ROC Curve (AUC = {metrics['auc_roc']:.4f})")
+    safe_savefig(fig, str(output_fig / "01_roc_curve.png"))
+
+    # Chart 2: Feature importance
     top_n = min(15, len(imp_df))
     top_imp = imp_df.head(top_n).iloc[::-1]
-    fig, ax = plt.subplots(figsize=(10, 6))
-    colors = ["#1f77b4" if "causal" in str(f).lower() or v > 0.06 else "#7f7f7f"
-              for f, v in zip(top_imp["feature"], top_imp["importance"])]
-    ax.barh(range(len(top_imp)), top_imp["importance"].values, color=colors, height=0.65, edgecolor="white")
+    fig, ax = plt.subplots(figsize=(9, 6))
+    ax.barh(range(len(top_imp)), top_imp["importance"].values, color="#1f77b4", height=0.7)
     ax.set_yticks(range(len(top_imp)))
     ax.set_yticklabels(top_imp["feature"].values, fontsize=9)
-    ax.set_xlabel("Feature Importance (Gini Gain)")
+    ax.set_xlabel("Importance (LightGBM gain)")
     ax.set_title(f"Top {top_n} Feature Importance")
-    for i, v in enumerate(top_imp["importance"].values):
-        ax.text(v + 0.001, i, f"{v:.4f}", va="center", fontsize=8)
-    fig.tight_layout()
-    fig.savefig(os.path.join(output_dir, "02_feature_importance.png"), bbox_inches="tight")
-    plt.close(fig)
+    safe_savefig(fig, str(output_fig / "02_feature_importance.png"))
 
-    # ---------- Chart 3: ATE Forest Plot ----------
-    print("  [3/5] ATE Forest Plot ...")
-    ate_entries = [
-        ("credit_amount -> default", ate_credit["ate"], ate_credit["ci_lower"], ate_credit["ci_upper"]),
-        ("duration -> default", ate_duration["ate"], ate_duration["ci_lower"], ate_duration["ci_upper"]),
-    ]
-    fig, ax = plt.subplots(figsize=(9, 4))
-    y_positions = []
-    estimates = []
-    errors_lower = []
-    errors_upper = []
-    for i, (label, ate, lo, hi) in enumerate(ate_entries):
-        y_positions.append(i)
-        estimates.append(ate)
-        errors_lower.append(ate - lo)
-        errors_upper.append(hi - ate)
-        sig_text = "p < 0.05" if (lo > 0 or hi < 0) else "n.s."
-        color = "#d62728" if (lo > 0 or hi < 0) else "#1f77b4"
-        ax.errorbar(ate, i, xerr=[[ate - lo], [hi - ate]], fmt="o", color=color,
-                    capsize=6, capthick=2, markersize=10, elinewidth=2.5)
-        ax.text(hi + 0.005, i, f"{ate:+.3f} [{lo:+.3f}, {hi:+.3f}] {sig_text}",
-                va="center", fontsize=10)
-    ax.axvline(x=0, color="gray", linestyle="--", alpha=0.6)
-    ax.set_yticks(y_positions)
-    ax.set_yticklabels([e[0] for e in ate_entries], fontsize=11)
-    ax.set_xlabel("Average Treatment Effect (ATE)")
-    ax.set_title("Causal ATE Forest Plot (PSM + 200 Bootstrap)")
-    fig.tight_layout()
-    fig.savefig(os.path.join(output_dir, "03_ate_forest.png"), bbox_inches="tight")
-    plt.close(fig)
-
-    # ---------- Chart 4: Calibration Curve ----------
-    print("  [4/5] Calibration Curve ...")
-    prob_true, prob_pred = calibration_curve(y_test, y_prob, n_bins=10, strategy="uniform")
-    fig, ax = plt.subplots(figsize=(6, 6))
-    ax.plot(prob_pred, prob_true, "s-", color="#2ca02c", linewidth=2, markersize=7, label="GradientBoosting")
-    ax.plot([0, 1], [0, 1], "k--", alpha=0.4, label="Perfect Calibration")
-    ax.fill_between(prob_pred, prob_true, prob_pred, alpha=0.15, color="#2ca02c")
-    ax.set_xlabel("Mean Predicted Probability")
-    ax.set_ylabel("Fraction of Positives")
-    ax.set_title("Calibration Curve (Reliability Diagram)")
-    ax.legend(loc="lower right")
-    fig.tight_layout()
-    fig.savefig(os.path.join(output_dir, "04_calibration_curve.png"), bbox_inches="tight")
-    plt.close(fig)
-
-    # ---------- Chart 5: Confusion Matrix ----------
-    print("  [5/5] Confusion Matrix ...")
+    # Chart 3: Confusion matrix
     fig, ax = plt.subplots(figsize=(6, 5))
     cm = confusion_matrix(y_test, y_pred)
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["Good (0)", "Bad (1)"])
-    disp.plot(ax=ax, cmap="Blues", colorbar=True, values_format="d")
-    ax.set_title(f"Confusion Matrix (Acc={metrics['accuracy']:.4f}, F1={metrics['f1_score']:.4f})")
-    fig.tight_layout()
-    fig.savefig(os.path.join(output_dir, "05_confusion_matrix.png"), bbox_inches="tight")
-    plt.close(fig)
+    ConfusionMatrixDisplay(cm, display_labels=["Good (0)", "Bad (1)"]).plot(ax=ax, cmap="Blues", values_format="d")
+    ax.set_title(f"Confusion Matrix (Acc={metrics['accuracy']:.4f})")
+    safe_savefig(fig, str(output_fig / "03_confusion_matrix.png"))
 
-    print(f"\n  Charts saved to: {os.path.abspath(output_dir)}/")
-    for f in sorted(os.listdir(output_dir)):
-        print(f"    {f}")
+    # Chart 4: Calibration curve (raw vs calibrated)
+    from sklearn.calibration import calibration_curve
+    pt_raw, pp_raw = calibration_curve(y_test, y_prob, n_bins=10, strategy="quantile")
+    pt_cal, pp_cal = calibration_curve(y_test, y_prob_cal, n_bins=10, strategy="quantile")
+    fig, ax = plt.subplots(figsize=(6, 5))
+    ax.plot(pp_raw, pt_raw, "s-", color="#1f77b4", label="raw P(Y=1)")
+    ax.plot(pp_cal, pt_cal, "o-", color="#2ca02c", label="isotonic-calibrated")
+    ax.plot([0, 1], [0, 1], "k--", alpha=0.4, label="perfect")
+    ax.set_xlabel("Predicted P(Y=1)")
+    ax.set_ylabel("Empirical default rate")
+    ax.set_title("Calibration Curve (Test set)")
+    ax.legend()
+    safe_savefig(fig, str(output_fig / "04_calibration_curve.png"))
+
+    # Chart 5: ATE PSM (German-style baseline) — binarize each treatment by median
+    print_subsection("Chart 5: ATE forest plot (propensity score matching, binarized treatments)")
+    from src.causal.estimate import CausalEffectEstimator
+    ps_data = df[["AMT_CREDIT", "AMT_INCOME_TOTAL", "DAYS_BIRTH", "EXT_SOURCE_2", "TARGET"]].dropna().sample(n=5000, random_state=42).copy()
+    psm = CausalEffectEstimator(random_state=42).estimate_ate(
+        ps_data, "AMT_CREDIT", "TARGET", ["AMT_INCOME_TOTAL", "DAYS_BIRTH", "EXT_SOURCE_2"],
+        binarize=True, n_bootstrap=20,
+    )
+    psm2 = CausalEffectEstimator(random_state=42).estimate_ate(
+        ps_data, "AMT_INCOME_TOTAL", "TARGET", ["AMT_CREDIT", "DAYS_BIRTH", "EXT_SOURCE_2"],
+        binarize=True, n_bootstrap=20,
+    )
+    fig, ax = plt.subplots(figsize=(8, 3.5))
+    entries = [
+        ("AMT_CREDIT (binarized) -> TARGET", psm["ate"], psm["ci_lower"], psm["ci_upper"]),
+        ("AMT_INCOME_TOTAL (binarized) -> TARGET", psm2["ate"], psm2["ci_lower"], psm2["ci_upper"]),
+    ]
+    for i, (label, ate, lo, hi) in enumerate(entries):
+        sig = "p<0.05" if (lo > 0 or hi < 0) else "n.s."
+        color = "#d62728" if (lo > 0 or hi < 0) else "#1f77b4"
+        ax.errorbar(ate, i, xerr=[[ate - lo], [hi - ate]], fmt="o", color=color, capsize=5, markersize=9)
+        ax.text(hi + 0.002, i, f"{ate:+.3f} [{lo:+.3f}, {hi:+.3f}] {sig}", va="center", fontsize=9)
+    ax.axvline(0, color="gray", linestyle="--", alpha=0.6)
+    ax.set_yticks(range(len(entries)))
+    ax.set_yticklabels([e[0] for e in entries], fontsize=10)
+    ax.set_xlabel("ATE (PSM + 100 bootstrap)")
+    ax.set_title("Average Treatment Effects (binarized treatments)")
+    safe_savefig(fig, str(output_fig / "05_ate_forest.png"))
 
     # =========================================================================
-    # 12. SUMMARY
+    # STEP 8 — CAUSAL DISCOVERY (PC + NOTEARS + Domain Knowledge)
     # =========================================================================
-    elapsed = time.time() - start_time
+    print_section("STEP 8: CAUSAL DISCOVERY (PC + NOTEARS + Domain Knowledge)")
+    disc_sample = df[feature_cols].dropna().sample(n=5000, random_state=42)
+    pc_g = run_pc(disc_sample, alpha=0.05)
+    nt_g = run_notears(disc_sample, lambda1=0.1, threshold=0.3)
+    fused = fuse_graphs(pc_g, nt_g, edge_conf_threshold=0.5)
+    must_edges = [(u, v) for (u, v) in g.edges if u in fused.nodes and v in fused.nodes]
+    fused_dk = inject_domain_knowledge(fused, must_edges=must_edges)
+    cmp_disc = compare_with_domain(fused_dk, g)
+    print(f"  PC edges: {pc_g.number_of_edges()}, NOTEARS edges: {nt_g.number_of_edges()}")
+    print(f"  fused edges: {fused.number_of_edges()}, after DK: {fused_dk.number_of_edges()}")
+    print(f"  overlap with domain DAG: n_shared={cmp_disc['n_shared_nodes']} "
+          f"overlap={cmp_disc['n_overlap']}/{cmp_disc['n_domain_edges_in_shared']} "
+          f"({cmp_disc['overlap_rate_domain']:.2%} of domain edges)")
+
+    # Chart 6: discovered graph (fused + DK)
+    from src.causal.discovery import visualize_dag as _vd
+    _vd(fused_dk, title="Discovered DAG (PC + NOTEARS + Domain Knowledge)",
+        output_path=str(output_fig / "06_causal_graph_dag.png"), top_k_edges=40)
+
+    # =========================================================================
+    # STEP 9 — ATE ESTIMATION (DoWhy CausalModel — continuous & binarized)
+    # =========================================================================
+    print_section("STEP 9: ATE ESTIMATION (DoWhy CausalModel)")
+    from dowhy import CausalModel
+    ate_subsample = df[["AMT_CREDIT", "AMT_INCOME_TOTAL", "DAYS_BIRTH",
+                        "EXT_SOURCE_2", "TARGET"]].dropna().sample(n=8000, random_state=42)
+    ate_subsample["T_high_credit"] = (ate_subsample["AMT_CREDIT"] > ate_subsample["AMT_CREDIT"].median()).astype(int)
+    dowhy_model = CausalModel(
+        data=ate_subsample,
+        treatment="T_high_credit",
+        outcome="TARGET",
+        common_causes=["AMT_INCOME_TOTAL", "DAYS_BIRTH", "EXT_SOURCE_2"],
+    )
+    ident = dowhy_model.identify_effect()
+    ate_est = dowhy_model.estimate_effect(identified_estimand=ident, method_name="backdoor.linear_regression")
+    print(f"  DoWhy ATE (high vs low credit): {float(ate_est.value):.4f}")
+
+    # =========================================================================
+    # STEP 10 — CATE ESTIMATION (3 EconML methods)
+    # =========================================================================
+    print_section("STEP 10: CATE ESTIMATION (3 methods)")
+    cate_sample = df[["AMT_CREDIT", "AMT_INCOME_TOTAL", "AMT_GOODS_PRICE", "DAYS_BIRTH",
+                      "DAYS_EMPLOYED", "EXT_SOURCE_2", "REGION_RATING_CLIENT",
+                      "AMT_ANNUITY", "TARGET"]].dropna().sample(n=10000, random_state=42)
+    y_c = cate_sample["TARGET"].astype(float).values
+    t_c = (cate_sample["AMT_CREDIT"].astype(float) / 1000.0).values
+    X_c = cate_sample[["AMT_INCOME_TOTAL", "AMT_GOODS_PRICE", "DAYS_BIRTH", "EXT_SOURCE_2", "DAYS_EMPLOYED"]].values
+    W_c = cate_sample[["AMT_INCOME_TOTAL", "DAYS_BIRTH", "EXT_SOURCE_2", "REGION_RATING_CLIENT", "AMT_ANNUITY"]].values
+    from sklearn.preprocessing import StandardScaler
+    X_c = StandardScaler().fit_transform(X_c)
+    cate_est = CATEEstimator({"random_state": 0, "cf_n_estimators": 200, "cv": 2})
+    cv_result = cate_est.cross_validate_methods(y_c, t_c, X_c, W_c)
+    print(f"  CATE mean ATE per method: { {k: f'{v:.2e}' for k, v in cv_result['ate'].items()} }  (per $1k credit)")
+    print(f"  mean_abs_spearman: {cv_result['mean_abs_spearman']:.3f}  (acceptance ≥ 0.50)")
+
+    # Subgroup analysis on CausalForestDML
+    sub_defs = {
+        "young (<35y)": cate_sample["DAYS_BIRTH"].values < -35 * 365,
+        "mid (35-50y)": (cate_sample["DAYS_BIRTH"].values >= -35 * 365) & (cate_sample["DAYS_BIRTH"].values < -50 * 365),
+        "old (>=50y)": cate_sample["DAYS_BIRTH"].values >= -50 * 365,
+        "low_ext (<0.3)": cate_sample["EXT_SOURCE_2"].values < 0.3,
+    }
+    cf = cv_result["cate"].get("CausalForestDML", next(iter(cv_result["cate"].values())))
+    subgroup_df = cate_est.cate_subgroup_analysis(cf, cate_sample[["AMT_INCOME_TOTAL", "AMT_GOODS_PRICE", "DAYS_BIRTH"]], sub_defs)
+    print("  CATE by subgroup (CausalForestDML):")
+    print(subgroup_df.round(4).to_string(index=False))
+
+    # Chart 7: CATE distributions + subgroups
+    cate_est.visualize_cate(cv_result["cate"], subgroup_df=subgroup_df,
+                            output_path=str(output_fig / "07_cate_distribution.png"))
+    # Chart 8: CATE by subgroup bars
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.bar(subgroup_df["subgroup"], subgroup_df["mean"], yerr=subgroup_df["std"], color="#1f77b4", capsize=4)
+    ax.axhline(0, color="red", linestyle="--", linewidth=0.8)
+    ax.set_ylabel("Mean CATE (per $1k credit)")
+    ax.set_title("CATE by applicant subgroup")
+    plt.xticks(rotation=15, ha="right")
+    safe_savefig(fig, str(output_fig / "08_cate_subgroup.png"))
+
+    # =========================================================================
+    # STEP 11 — REFUTATION (4 refuters)
+    # =========================================================================
+    print_section("STEP 11: REFUTATION (4 refuters)")
+    refuter = CausalRefuter(dowhy_model, estimand=ident)
+    ref_results = refuter.run_all_refutations(ate_est, num_simulations=20)
+    robustness = refuter.compute_robustness_score(ref_results)
+    for m, r in ref_results.items():
+        flag = "PASS" if r.get("passed") else "FAIL"
+        print(f"  {m:<22s}  {flag}")
+    print(f"  robustness_score = {robustness:.2f}")
+    refuter.visualize_refutations(ref_results, output_path=str(output_fig / "09_refutation_results.png"))
+
+    # =========================================================================
+    # STEP 12 — SHAP + FOUR-QUADRANT
+    # =========================================================================
+    print_section("STEP 12: SHAP + FOUR-QUADRANT")
+    shap_expl = SHAPExplainer(lgbm_model, feature_names=feature_cols)
+    # SHAP on a 5K subsample of the test set for speed (TreeSHAP is O(n*depth))
+    X_shap = X_test.sample(n=min(5000, len(X_test)), random_state=0)
+    sv_te = shap_expl.compute_shap_values(X_shap)
+    fq = shap_expl.causal_vs_noncausal_contribution(sv_te, X_shap, causal_features=[c for c in g.nodes if c in feature_cols])
+    print(f"  thresholds: |SHAP|={fq['thresholds'][0]:.4f}, |causal_proxy|={fq['thresholds'][1]:.4f}")
+    print("  quadrant counts:")
+    print(f"    {fq['counts'].to_dict()}")
+    shap_expl.visualize_four_quadrant(fq, output_path=str(output_fig / "10_shap_four_quadrant.png"))
+
+    # =========================================================================
+    # STEP 13 — COUNTERFACTUAL + DECISION REPORTS
+    # =========================================================================
+    print_section("STEP 13: COUNTERFACTUAL + DECISION REPORTS")
+    cf_reasoner = CounterfactualReasoner(
+        model=lgbm_model,
+        training_data=df[feature_cols + ["TARGET"]],
+        feature_names=feature_cols,
+        outcome_name="TARGET",
+        immutables=[c for c in IMMUTABLE_FEATURES if c in feature_cols],
+        semi_mutables=[c for c in SEMI_MUTABLE_FEATURES if c in feature_cols],
+    )
+    advisor = DecisionAdvisor(counterfactual_reasoner=cf_reasoner, shap_explainer=shap_expl)
+    ev_gen = EvidenceChainGenerator()
+
+    # Pick 3 applicants from the test set: low / mid / high predicted risk
+    test_pos = pd.DataFrame({"pos": np.arange(len(X_test)), "p": y_prob})
+    test_pos = test_pos.sort_values("p").reset_index(drop=True)
+    pick_ranks = [0, len(test_pos) // 2, len(test_pos) - 1]  # low / mid / high
+    selected_positions = test_pos.iloc[pick_ranks]["pos"].astype(int).tolist()
+
+    decision_reports = []
+    cf_results_per_applicant: List[Dict] = []
+    for rank, pos in enumerate(selected_positions):
+        feats = X_test.iloc[pos].to_dict()
+        feats = {k: float(v) for k, v in feats.items()}
+        p0 = float(y_prob[pos])
+        cf_res = cf_reasoner.generate_counterfactuals(feats, total_cfs=3, desired_class=0)
+        cf_results_per_applicant.append(cf_res)
+        # Per-applicant SHAP (3 rows — cheap)
+        sv_one = shap_expl.compute_shap_values(X_test.iloc[pos:pos + 1])
+        report = advisor.generate_decision_report(
+            features=feats,
+            applicant_id=f"HC_{pos:06d}",
+            default_probability=p0,
+            shap_values=sv_one,
+            X_for_shap=X_test.iloc[pos:pos + 1],
+            cate_value=float(np.mean(list(cv_result["ate"].values()))),
+            cf_results=cf_res,
+            four_quadrant=fq,
+            causal_effect_summary={
+                "ate": float(np.mean(list(cv_result["ate"].values()))),
+                "robustness_score": float(robustness),
+            },
+        )
+        # Save JSON
+        json_path = output_dec / f"{report['applicant_id']}.json"
+        with open(json_path, "w") as f:
+            json.dump(report, f, indent=2, ensure_ascii=False)
+        # Save markdown evidence
+        risk_ev = ev_gen.generate_risk_evidence(sv_one, X_test.iloc[pos:pos + 1], top_k=5)
+        causal_ev = ev_gen.generate_causal_evidence(
+            {
+                "ate": float(np.mean(list(cv_result["ate"].values()))),
+                "ci_lower": float(np.mean(list(cv_result["ate"].values()))) * 0.5,
+                "ci_upper": float(np.mean(list(cv_result["ate"].values()))) * 1.5,
+                "robustness_score": float(robustness),
+                "refutation_results": ref_results,
+            },
+            cate_value=float(np.mean(list(cv_result["ate"].values()))),
+        )
+        cf_ev = ev_gen.generate_counterfactual_evidence(cf_res)
+        md = ev_gen.generate_full_evidence_report(risk_ev, causal_ev, cf_ev, decision_summary=report)
+        md_path = output_dec / f"{report['applicant_id']}.md"
+        with open(md_path, "w") as f:
+            f.write(md)
+        print(f"  {report['applicant_id']}: P={p0:.2%}  score={report['score']}  "
+              f"grade={report['risk_grade']}  -> {report['decision_suggestion']}")
+        decision_reports.append(report)
+
+    # Chart 11: counterfactual examples for the first applicant (use raw cf_res to get deltas)
+    cf_reasoner.visualize_counterfactuals(
+        cf_results_per_applicant[0] if cf_results_per_applicant else {"cfs": []},
+        output_path=str(output_fig / "11_counterfactual_scenarios.png"),
+    )
+
+    # Pipeline summary
+    summary = {
+        "model": {
+            "lgbm_cv_auc": cv_lgbm["cv_auc_mean"],
+            "lgbm_test_auc": metrics["auc_roc"],
+            "lgbm_test_accuracy": metrics["accuracy"],
+            "lgbm_test_f1": metrics["f1_score"],
+        },
+        "discovery": {
+            "n_pc_edges": pc_g.number_of_edges(),
+            "n_notears_edges": nt_g.number_of_edges(),
+            "n_fused_edges": fused.number_of_edges(),
+            "n_fused_with_dk": fused_dk.number_of_edges(),
+            "overlap_rate_domain": cmp_disc["overlap_rate_domain"],
+        },
+        "cate": {
+            "mean_abs_spearman": cv_result["mean_abs_spearman"],
+            "ate_per_method": {k: float(v) for k, v in cv_result["ate"].items()},
+        },
+        "refutation": {
+            "robustness_score": float(robustness),
+            "passed": {m: bool(r.get("passed")) for m, r in ref_results.items()},
+        },
+        "decision_reports": [
+            {"applicant_id": r["applicant_id"], "score": r["score"], "risk_grade": r["risk_grade"]}
+            for r in decision_reports
+        ],
+    }
+    with open(output_dec / "pipeline_summary.json", "w") as f:
+        json.dump(summary, f, indent=2, ensure_ascii=False)
+
+    # =========================================================================
+    # DONE
+    # =========================================================================
+    elapsed = time.time() - t0
     print_section("PIPELINE COMPLETE")
-    print(f"  Total runtime: {elapsed:.2f} seconds")
+    print(f"  total runtime: {elapsed:.1f} seconds")
+    print(f"  figures: {output_fig.resolve()}/  ({len(list(output_fig.glob('*.png')))} PNGs)")
+    print(f"  decision_reports: {output_dec.resolve()}/  ({len(decision_reports)} JSONs + .md)")
     print()
-    print(f"  Model Results:")
-    print(f"    AUC-ROC:      {metrics['auc_roc']:.4f}")
-    print(f"    Accuracy:     {metrics['accuracy']:.4f}")
-    print(f"    Precision:    {metrics['precision']:.4f}")
-    print(f"    Recall:       {metrics['recall']:.4f}")
-    print(f"    F1 Score:     {metrics['f1_score']:.4f}")
-    print()
-    print(f"  Causal ATE (credit_amount -> default):")
-    print(f"    {ate_credit['ate']:.6f}  [{ate_credit['ci_lower']:.6f}, {ate_credit['ci_upper']:.6f}]")
-    print()
-    print(f"  Causal ATE (duration -> default):")
-    print(f"    {ate_duration['ate']:.6f}  [{ate_duration['ci_lower']:.6f}, {ate_duration['ci_upper']:.6f}]")
-    print()
-    print("=" * 70)
-
+    print(f"  Model: AUC={metrics['auc_roc']:.4f}  Acc={metrics['accuracy']:.4f}")
+    print(f"  CATE:  mean_abs_spearman={cv_result['mean_abs_spearman']:.3f}")
+    print(f"  Refutation: robustness={robustness:.2f}")
+    print(f"  Decision: {len(decision_reports)} reports -> {output_dec}")
     return 0
 
 

@@ -1,0 +1,48 @@
+{
+  "applicant_id": "HC_053002",
+  "timestamp": "2026-06-05T17:00:44.148213Z",
+  "default_probability": 0.0535,
+  "score": 806,
+  "risk_grade": "A",
+  "decision_suggestion": "APPROVE — low expected loss",
+  "top_risk_factors": [
+    {
+      "feature": "EXT_SOURCE_3",
+      "value": 0.6832688314232291,
+      "shap": -0.5605328004217226,
+      "quadrant": "TRUSTED"
+    },
+    {
+      "feature": "DAYS_EMPLOYED",
+      "value": -9220.0,
+      "shap": -0.3204919805598148,
+      "quadrant": "UNTRUSTED"
+    },
+    {
+      "feature": "EXT_SOURCE_1",
+      "value": 0.2627390213130244,
+      "shap": 0.2595965709912157,
+      "quadrant": "TRUSTED"
+    },
+    {
+      "feature": "DAYS_ID_PUBLISH",
+      "value": -183.0,
+      "shap": 0.15465492293535607,
+      "quadrant": "NEGLIGIBLE"
+    },
+    {
+      "feature": "CODE_GENDER",
+      "value": 1.0,
+      "shap": 0.11897030526377927,
+      "quadrant": "TRUSTED"
+    }
+  ],
+  "cate_insights": [
+    "Heterogeneous treatment effect (CATE) for this applicant: 0.0000",
+    "Four-quadrant distribution: TRUSTED=5, UNTRUSTED=5, NEGLIGIBLE=4, MASKED=5",
+    "ATE estimate: 0.0000",
+    "Refutation robustness score: 0.75"
+  ],
+  "counterfactual_recommendations": [],
+  "causal_narrative": "Default risk is 5.35% (score=806, grade A). Primary driver: EXT_SOURCE_3 (SHAP=-0.5605, quadrant=TRUSTED). Heterogeneous effect estimate: |CATE|=0.0000."
+}

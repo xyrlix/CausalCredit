@@ -1,0 +1,49 @@
+{
+  "model": {
+    "lgbm_cv_auc": 0.7503363489586677,
+    "lgbm_test_auc": 0.754675,
+    "lgbm_test_accuracy": 0.919667,
+    "lgbm_test_f1": 0.034397
+  },
+  "discovery": {
+    "n_pc_edges": 31,
+    "n_notears_edges": 8,
+    "n_fused_edges": 37,
+    "n_fused_with_dk": 45,
+    "overlap_rate_domain": 1.0
+  },
+  "cate": {
+    "mean_abs_spearman": 0.5783950164999502,
+    "ate_per_method": {
+      "LinearDML": 1.284104405913907e-05,
+      "SparseLinearDML": 1.2812837193369827e-05,
+      "CausalForestDML": 1.4191561421827308e-05
+    }
+  },
+  "refutation": {
+    "robustness_score": 0.75,
+    "passed": {
+      "placebo_treatment": true,
+      "random_common_cause": true,
+      "data_subset": true,
+      "e_value": false
+    }
+  },
+  "decision_reports": [
+    {
+      "applicant_id": "HC_067831",
+      "score": 847,
+      "risk_grade": "A"
+    },
+    {
+      "applicant_id": "HC_053002",
+      "score": 806,
+      "risk_grade": "A"
+    },
+    {
+      "applicant_id": "HC_040931",
+      "score": 375,
+      "risk_grade": "E"
+    }
+  ]
+}
