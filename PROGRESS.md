@@ -1,7 +1,7 @@
 # CausalCredit 开发进展记录
 
 > **最后更新**: 2026-06-06 | **环境**: CPU (Python 3.11, `ldq_cc` conda env)  
-> **状态**: 7 个里程碑全部完成 ✅ (M5 8 表 JOIN, M5+ CPU 优化, M6 文档)
+> **状态**: 8 个里程碑全部完成 ✅ (M5 8 表 JOIN, M5+ CPU 优化, M6 文档, M7 反欺诈三件套)
 
 ---
 
@@ -16,6 +16,8 @@
 | **M4** | 监控 + 测试 + 文档 | ✅ | PSI 漂移检测 (3 层) + 85 个单元测试 (1.34s) |
 | **M5** | **8 表 JOIN + 多表因果特征** | ✅ | **5 张二级表 (~1.1 GB, 80M 行) → 246 聚合特征, AUC 0.7547→0.7803** |
 | **M5+** | **CPU 优化** | ✅ | **多表聚合缓存 (65s→2s) + L1 特征预筛选 (-16% 训练耗时), 总耗时 245s→185s** |
+| **M6** | **GPU LightGBM + Optuna** | ✅ | **LightGBM GPU build 接入 (默认关闭) + Optuna 9 维超参搜索 (默认关闭), 2 个可选杠杆** |
+| **M7** | **反欺诈三件套** | ✅ | **三分类子模型 (fraudulent/non_malicious/systemic) + 包装资质因果一致性检测 + 养流水因果去噪评分, 14 步 / 14 图 / 25 新测试** |
 
 ---
 
@@ -465,8 +467,136 @@ model:
 | M5 (8 表冷跑) | 244.9s | 127.8s | 245 - 0 冷跑 |
 | M5+ (热跑) | 184.5s | 111.8s | cache + L1 |
 | M6 (热跑) | 184.5s | 111.8s | GPU/Optuna 默认不启用 |
+| M7 (热跑) | 194.9s | 104.5s | +STEP 14 反欺诈 (35s), STEP 6 略优化 |
 
 **M6 净收益**: 0s 耗时优化（默认不开启）, +7 个测试, +1 个可选 GPU 路径, +1 个可选 Optuna 路径, **3 个"开源但更精细"的优化杠杆**保留给未来 N 增长 / 数据替换场景。
+
+---
+
+## M7 — 反欺诈三件套 (Anti-Fraud Three-Pack) ✅
+
+### 动机
+docs/CausalCredit_反欺诈能力覆盖分析.md §4.1 提出的"反欺诈三件套"是设计文档里唯一没落到代码的核心能力:
+1. **三分类子模型**: 在 default=1 的子群里进一步分 fraudulent / non_malicious / systemic
+2. **包装资质因果一致性**: 客户表面资质(POSITIVE SHAP)与因果图谱是否一致(收入→消费→还款链)
+3. **养流水因果去噪**: P(真实评分 | do(去养流水效应)) 估计
+
+三个独立模块 + 一个 `FraudGuard` 编排器, 注入到现有 13 步 pipeline 末尾形成 STEP 14。
+
+### 1. 三分类子模型 `src/fraud/three_class.py`
+
+**类别** (`DEFRAUDER_CLASSES`):
+- `fraudulent` — 主观恶意(收入低/工作短/首期即违约/材料造假)
+- `non_malicious` — 还款能力变化(失业/疾病/家庭),非主观恶意
+- `systemic` — 系统性风险(衰退行业/政策变化),个人无能为力
+
+**伪标签构造** (无 ground truth, 用业务规则):
+- `fraudulent`: `INST__DPD_MAX ≥ 30` ∨ (高收入 z + 低就业 z) ∨ (低 EXT_SOURCE_1 + 高收入 z)
+- `systemic`: `ORGANIZATION_TYPE` 命中衰退行业子串(Industry: mining/Construction/Trade: type 7/...)
+- `non_malicious`: default=1 且非上面两类
+
+**模型**: 4 类 LightGBM(`non_default` + 3 fraud 类),在 default=1 子样本上重新归一化得 P(fraudulent | default=1), P(non_malicious | default=1), P(systemic | default=1)。
+
+**`fraud_score = P(default) × P(fraudulent | default=1)`** — 二分类概率与子分类概率的乘积, 双重信号。
+
+### 2. 包装资质因果一致性 `src/fraud/packaging.py`
+
+**核心思路**: 申请人的"包装"(fabricated)信号是 — 模型的 top-K 高 |SHAP| 特征里, 有大比例的全局因果 proxy 很低(即"模型在用它们,但因果图说这些特征不是问题根源")。
+
+**域 DAG 期望路径** (`EXPECTED_PATHS`):
+- `income → goods_price → credit → annuity` (主链)
+- `income → EXT_SOURCE_2` (中介)
+- `DAYS_BIRTH → DAYS_EMPLOYED → income` (DAG 协变量链)
+
+**`path_integrity`**: 这 3 条链里, 比例 step 在 [0.01, 100] 范围内算"完整",否则"断裂"。
+
+**`packaging_score = UNTRUSTED / (TRUSTED + UNTRUSTED)`** (top-25% SHAP 内),即模型高权特征中"因果不靠谱"的比例。范围 0.26 - 0.56, 大部分在 borderline (0.30 - 0.50)。
+
+**路由**:
+- `>= 0.50` → `REJECT_PACKAGING_SUSPECTED`
+- `>= 0.30` → `MANUAL_REVIEW` / pipeline 中映射为 `REVIEW_BORDERLINE`
+- 否则 → `PROCEED`
+
+### 3. 养流水因果去噪 `src/fraud/denoising.py`
+
+**核心假设**: "养流水"用户制造出与消费脱钩的还款历史(钱从外面来,不是工资的产物)。因果信号: 还款 vs 消费特征的符号一致性。
+
+**`causal_consistency`** (per-applicant): 把 5 个 `INST__` 还款列和 4 个 `CC_/POS_` 消费列按行 z-score 后取均值, 用 `sign(rep_score) * sign(con_score)` 的符号一致性映射到 [0, 1]。
+
+**`inflation_strength = clip((1 - consistency) * 0.15 * 5, 0, 0.15)`** — 一致性越低, 估计的"养流水膨胀"越大, 上限 0.15(即最多把 P(default) 推高 15 个百分点)。
+
+**`denoised_default_proba = min(1, P(default) + inflation_strength)`** — 把被压低的违约概率加回估计的"养流水"部分。
+
+**`denoising_action`**: consistency < 0.50 → `FLAG_FOR_REVIEW`,否则 `PROCEED`。
+
+### 4. `FraudGuard` 编排器 `src/fraud/pipeline.py`
+
+把三个分数 + 5 维 routing reason 聚合成单条反欺诈路由:
+
+```
+REJECT_FRAUD        fraud_score >= 0.10                  (P(fraud) 高)
+REJECT_PACKAGING    packaging_score >= 0.50              (包装嫌疑大)
+REVIEW_DENOISED     denoising_action == FLAG_FOR_REVIEW  (养流水嫌疑)
+REVIEW_BORDERLINE   任意信号在 [0.3, threshold) 区间
+PROCEED             干净
+```
+
+### 5. 端到端集成 (`src/run_pipeline.py` STEP 14)
+
+- 在 50K 训练子集上拟合 FraudGuard
+- 对 3 个 picked applicants 算单条 fraud 报告, **注入** 现有 decision_reports JSON 的 `fraud` 字段
+- 对 1K 测试子集批量打分用于图表
+- 新增 3 张图: `12_fraud_score_routing.png` (直方图 + 路由饼图), `13_packaging_scatter.png` (path_integrity × packaging_score), `14_denoising_effect.png` (原 P(default) vs 去噪 P(default))
+- `pipeline_summary.json` 增 `anti_fraud` 段: 分数范围、路由分布、平均去噪膨胀
+
+**实测 1K 测试样本路由分布** (fraud 阈值 calibration 前):
+
+| 路由 | 占比 | 含义 |
+|------|-----:|------|
+| REVIEW_BORDERLINE | 91.4% | 包装嫌疑 borderline, 进入人工审查 |
+| PROCEED | 5.2% | 干净, 直接通过 |
+| REJECT_FRAUD | 2.5% | P(fraud) 高, 直接拒绝 |
+| REJECT_PACKAGING | 0.9% | 包装嫌疑大, 直接拒绝 |
+
+**端到端耗时**: STEP 14 = 35-47s (训练 50K 3-class LightGBM + 1K 批量评分 + 3 张图), pipeline 总耗时 184.5s → **194.9s** (+5.6%)。
+
+### 6. 测试 (25 个新测试)
+
+| 测试文件 | 用例数 | 覆盖 |
+|----------|------:|------|
+| `test_fraud_three_class.py` | 7 | 伪标签规则、4 类模型、fraud_score 公式 |
+| `test_fraud_packaging.py` | 7 | credibility 校准、4 象限分类、path integrity |
+| `test_fraud_denoising.py` | 6 | consistency、denoised 范围、manufactured 膨胀 |
+| `test_fraud_pipeline.py` | 5 | FraudGuard 端到端 + routing 决策 |
+
+**总测试数**: 108 → **133** (+25)
+
+### 7. 决策报告扩展
+
+每个 applicant JSON 增 `fraud` 字段:
+```json
+{
+  "fraud": {
+    "fraud_score": 0.00051,
+    "defaulter_sub_proba": {"fraudulent": 0.0006, "non_malicious": 0.9994, "systemic": 0.0},
+    "packaging_score": 0.37,
+    "path_integrity": 1.0,
+    "denoised_default_proba": 1.0,
+    "causal_consistency": 0.5,
+    "inflation_strength": 0.15,
+    "routing": "REVIEW_BORDERLINE",
+    "routing_reasons": ["packaging_score=0.370 in [0.30, 0.50) borderline"]
+  }
+}
+```
+对应 .md 文件末尾追加"## 反欺诈三件套评分 (M7 Anti-Fraud Three-Pack)" 表格。
+
+### 关键设计权衡
+
+1. **伪标签 vs 真实标签**: 无欺诈 ground truth, 用业务规则生成伪标签。可解释、可审计、可由反欺诈团队在生产中替换为人工标注的种子集。
+2. **`fraud_score = P(default) × P(fraudulent | default=1)`**: 用乘法组合,两个概率独立,避免欺诈子分类稀释主模型信号。
+3. **`packaging_score = UNTRUSTED / (TRUSTED + UNTRUSTED)`** (top-25% SHAP 内): 这个公式直接从定义出发 — 包装嫌疑 = "模型在用但因果不靠谱"的特征占比,不再用 1 - (TRUSTED+MASKED)/total 的对称定义(那个定义在 median 阈值下恒为 0.5,无信息量)。
+4. **三件套独立性**: 三个分数测量不同的反欺诈维度(恶意/包装/养流水),通过 `_fraud_routing` 按优先级合成,避免一个高分淹没其他信号。
 
 ---
 
@@ -475,6 +605,7 @@ model:
 - ~~8 表 JOIN（bureau / previous_application / POS / installments / credit_card）→ 多表因果特征~~ ✅ M5 完成
 - ~~GPU 加速（LightGBM GPU build）~~ ✅ M6 完成（接入, 默认关闭）
 - ~~Optuna 超参调优~~ ✅ M6 完成（接入, 默认关闭, 实测 Home Credit 上不显著）
+- ~~反欺诈三件套（三分类 + 包装资质 + 养流水去噪）~~ ✅ M7 完成
 - 实时推理服务（gRPC / ONNX Runtime）
 - K8s / Helm / Terraform 部署
 - 多语言决策建议扩展（粤语 / 繁体）
@@ -488,19 +619,20 @@ model:
 CausalCredit/
 ├── src/                          # 核心代码
 │   ├── data/                     # ✅ Home Credit + German 加载器, 校验, 预处理
-│   ├── features/                 # ✅ builder + causal_features
+│   ├── features/                 # ✅ builder + causal_features + aggregator
 │   ├── causal/                   # ✅ graph / estimate / discovery / cate / refute
-│   ├── models/                   # ✅ train (LightGBM + GBT) / evaluate / calibrate
+│   ├── models/                   # ✅ train (LightGBM + GBT + GPU/Optuna) / evaluate / calibrate
 │   ├── explain/                  # ✅ shap_explain / counterfactual / decision / evidence
+│   ├── fraud/                    # ✅ M7 三件套: three_class + packaging + denoising + pipeline
 │   ├── api/                      # ✅ app / routes / services / dependencies / schemas
 │   ├── frontend/                 # ✅ app.py + 4 pages
 │   ├── monitoring/               # ✅ drift_detector
-│   └── run_pipeline.py           # ✅ 13 步入口
-├── tests/                        # ✅ 16 文件 / 108 用例
+│   └── run_pipeline.py           # ✅ 14 步入口
+├── tests/                        # ✅ 19 文件 / 133 用例
 ├── configs/                      # ✅ config.yaml
 ├── scripts/                      # ✅ run_api / run_demo / run_tests / setup_env
 ├── data/                         # ✅ Home Credit + German Credit
-├── output/                       # ✅ figures (11) + decision_reports (3) + demo_m1 (9) + models
+├── output/                       # ✅ figures (14) + decision_reports (3) + demo_m1 (9) + models
 ├── docs/                         # 11 份原始分析文档
 ├── CLAUDE.md                     # 给 Claude Code 的协作指引
 ├── PROGRESS.md                   # 本文件

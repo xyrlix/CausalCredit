@@ -38,7 +38,7 @@ CausalCredit 是一套面向金融机构的**因果推理增强信用评分系�
 ### 一键运行
 
 ```bash
-# 1) 端到端 pipeline（M5，14 步，约 245 秒, CPU）
+# 1) 端到端 pipeline（M5，14 步 + STEP 14 反欺诈，约 195 秒, CPU）
 /home/tony/anaconda3/envs/ldq_cc/bin/python -m src.run_pipeline
 
 # 2) FastAPI 后端（M3）
@@ -47,7 +47,7 @@ CausalCredit 是一套面向金融机构的**因果推理增强信用评分系�
 # 3) Streamlit 前端（M3）
 /home/tony/anaconda3/envs/ldq_cc/bin/streamlit run src/frontend/app.py
 
-# 4) 单元测试（M5，98 个用例，~1.4 秒）
+# 4) 单元测试（M7，133 个用例，~8 秒）
 /home/tony/anaconda3/envs/ldq_cc/bin/python -m pytest tests/ -v
 ```
 
@@ -68,21 +68,22 @@ CausalCredit 是一套面向金融机构的**因果推理增强信用评分系�
 CausalCredit/
 ├── src/
 │   ├── data/                  # HomeCreditLoader + German Loader + validator/preprocessing
-│   ├── features/              # 因果特征工程（5 个特征）
+│   ├── features/              # 因果特征工程（5 个特征）+ aggregator
 │   ├── causal/                # DAG / discovery / ATE / CATE / refute
-│   ├── models/                # LightGBM / GBT / 校准 / 评估
+│   ├── models/                # LightGBM (+ GPU/Optuna) / GBT / 校准 / 评估
 │   ├── explain/               # SHAP 四象限 / DiCE 反事实 / 决策 / 证据链
+│   ├── fraud/                 # M7 反欺诈三件套 (three_class + packaging + denoising + pipeline)
 │   ├── api/                   # FastAPI 5 端点 + 业务服务层
 │   ├── frontend/              # Streamlit 4 页（dashboard / 因果图 / 反事实 / 决策）
 │   ├── monitoring/            # PSI 漂移检测（特征 / 预测 / 概念）
-│   └── run_pipeline.py        # 14 步端到端入口 (含 STEP 3.5 多表聚合)
-├── tests/                     # 15 个测试文件，98 用例
+│   └── run_pipeline.py        # 14 步端到端入口 (含 STEP 3.5 多表 + STEP 14 反欺诈)
+├── tests/                     # 19 个测试文件，133 用例
 ├── configs/                   # config.yaml
 ├── scripts/                   # run_api / run_demo / run_tests / setup_env
 ├── data/                      # Home Credit + German Credit
 ├── output/
-│   ├── figures/               # 11 张 PNG
-│   ├── decision_reports/      # 3 份 JSON + Markdown
+│   ├── figures/               # 14 张 PNG (M0-M6: 11 + M7: 3)
+│   ├── decision_reports/      # 3 份 JSON + Markdown (含 fraud 字段)
 │   ├── demo_m1/               # M1 5 创新点图表
 │   └── models/                # 训练好的模型 pickle 缓存
 └── docs/                      # 11 份原始分析文档
@@ -106,23 +107,26 @@ CausalCredit/
 | 11 | **反驳验证**（4 类 refuter + E-value） | 通过/失败 + 鲁棒性分 |
 | 12 | **SHAP 四象限** | 全局 / 局部 / 一致性 |
 | 13 | **反事实 + 决策报告** | 3 份 JSON + 11 张图 |
+| **14** | **反欺诈三件套** (M7: 三分类 + 包装资质 + 养流水去噪) | fraud 字段注入决策报告 + 3 张图 |
 
 ## 当前实测结果（Home Credit, 30 万行 + 5 张二级表, M6 优化后）
 
 > 详细 per-step 耗时、ATE/CATE/Refutation 数值、决策报告样例见 [`BENCHMARKS.md`](BENCHMARKS.md)
 
-| 指标 | M2 单表 | M5 8 表 | M5+ (CPU 优化) | M6 (GPU + Optuna) | 累计提升 |
-|------|------:|-----------:|-----------:|-----------:|-----:|
-| 特征数 | 30 | 265 | 216 | 211 | +181 |
-| 3-fold CV AUC | 0.7503 | 0.7763 | 0.7756 | **0.7803** | +0.030 |
-| 测试集 AUC-ROC | 0.7547 | 0.7803 | 0.7803 | **0.7803** | +0.026 |
-| 测试集 F1 (default) | 0.0344 | 0.0770 | 0.0735 | **0.0735** | +0.039 |
-| ATE（`AMT_CREDIT` → `TARGET`, DoWhy） | +0.0092 | +0.0092 | +0.0092 | +0.0092 | — |
-| CATE 一致性（3 方法 mean Spearman） | 0.578 | 0.548 | 0.548 | 0.548 | -0.030 |
-| 反驳验证 | 4 中 3 | 4 中 3 | 4 中 3 | 4 中 3 | — |
-| 决策报告多样性 | 3 份 | 3 份 | 3 份 | 3 份 | — |
-| 单元测试 | 85 / 1.34s | 98 / 1.44s | 101 / 1.46s | **108 / 7.69s** | +23 |
-| Pipeline 端到端耗时 | 84.8s | 244.9s (冷) | 184.5s (热) | **184.5s (热)** | +99.7s (净增) |
+| 指标 | M2 单表 | M5 8 表 | M5+ (CPU 优化) | M6 (GPU + Optuna) | M7 (+ 反欺诈) | 累计提升 |
+|------|------:|-----------:|-----------:|-----------:|-----------:|-----:|
+| 特征数 | 30 | 265 | 216 | 211 | 211 | +181 |
+| 3-fold CV AUC | 0.7503 | 0.7763 | 0.7756 | **0.7803** | **0.7803** | +0.030 |
+| 测试集 AUC-ROC | 0.7547 | 0.7803 | 0.7803 | **0.7803** | **0.7803** | +0.026 |
+| 测试集 F1 (default) | 0.0344 | 0.0770 | 0.0735 | **0.0735** | **0.0735** | +0.039 |
+| ATE（`AMT_CREDIT` → `TARGET`, DoWhy） | +0.0092 | +0.0092 | +0.0092 | +0.0092 | +0.0092 | — |
+| CATE 一致性（3 方法 mean Spearman） | 0.578 | 0.548 | 0.548 | 0.548 | 0.548 | -0.030 |
+| 反驳验证 | 4 中 3 | 4 中 3 | 4 中 3 | 4 中 3 | 4 中 3 | — |
+| 决策报告多样性 | 3 份 | 3 份 | 3 份 | 3 份 | 3 份 (+ fraud 字段) | — |
+| 单元测试 | 85 / 1.34s | 98 / 1.44s | 101 / 1.46s | 108 / 7.69s | **133 / 8.0s** | +48 |
+| Pipeline 端到端耗时 | 84.8s | 244.9s (冷) | 184.5s (热) | 184.5s (热) | **194.9s (热)** | +110.1s (净增) |
+
+> M7 在 M6 基础上加入 **反欺诈三件套**（三分类子模型 + 包装资质因果一致性 + 养流水因果去噪）作为 STEP 14。在 1K 测试子集上路由分布：REVIEW_BORDERLINE 91.4%, PROCEED 5.2%, REJECT_FRAUD 2.5%, REJECT_PACKAGING 0.9%。三件套独立打分后按优先级合成 5 类 routing, 避免一个高分淹没其他信号。
 
 > M6 接入 `lightgbm 4.5.0 + CUDA` build（自动回退）+ `Optuna 4.9` 超参搜索（gated by `optuna.enabled`）。
 > **实测结论**：在 21 万行规模上，GPU build 反而比 CPU 慢 1.5-1.6x（kernel 启动延迟 > 数据并行收益），Optuna 25 trials 调优相对默认参数 AUC 持平（−0.0013，Home Credit 数据已逼近 Bayes 最优）。GPU/Optuna 接口保留为可选项，差异化继续走因果可解释性路线。

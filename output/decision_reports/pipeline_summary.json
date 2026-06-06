@@ -29,6 +29,23 @@
       "e_value": false
     }
   },
+  "anti_fraud": {
+    "fraud_score_range": [
+      7.892360344676322e-06,
+      0.4385286394481124
+    ],
+    "packaging_score_range": [
+      0.25925925925925924,
+      0.5555555555555556
+    ],
+    "routing_distribution": {
+      "REVIEW_BORDERLINE": 914,
+      "PROCEED": 52,
+      "REJECT_FRAUD": 25,
+      "REJECT_PACKAGING": 9
+    },
+    "denoised_mean_inflation": 0.14999999999999994
+  },
   "decision_reports": [
     {
       "applicant_id": "HC_023041",

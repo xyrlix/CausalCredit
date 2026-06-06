@@ -233,13 +233,66 @@ Optuna 找到的最优参数：低学习率 (0.014) + 高子采样 (0.92) + 中�
 
 ---
 
+## 8.6 M7 — 反欺诈三件套
+
+### M7.1 — 三分类子模型（伪标签 + 4 类 LightGBM）
+
+**伪标签规则**（无欺诈 ground truth, 用业务规则）:
+
+| 类别 | 触发条件 |
+|------|---------|
+| fraudulent | `INST__DPD_MAX >= 30` ∨ (高收入 z + 低就业 z) ∨ (低 EXT_SOURCE_1 + 高收入 z) |
+| systemic | `ORGANIZATION_TYPE` 命中衰退行业子串 |
+| non_malicious | default=1 且非上面两类 |
+
+**训练**: 50K 训练子集 + 4 类 LightGBM, 耗时 ~15s。
+
+**`fraud_score = P(default) × P(fraudulent \| default=1)`** — 1K 测试子集 fraud_score 范围 [0.0000, 0.4385], 中位数 ~0.001, 99% 在 0.1 以下。
+
+### M7.2 — 包装资质因果一致性
+
+**算法**:
+- top-25% |SHAP| 特征 = "模型在用"
+- 4 类: TRUSTED(高 SHAP + 高 causal) / UNTRUSTED(高 SHAP + 低 causal) / MASKED(低 SHAP + 高 causal) / NEGLIGIBLE
+- `packaging_score = UNTRUSTED / (TRUSTED + UNTRUSTED)` — 包装嫌疑 = "模型在用但因果不靠谱"的特征比例
+
+**1K 测试子集分布**:
+- packaging_score 范围: [0.26, 0.56]
+- 中位数 ~0.37 (borderline)
+- 9 人 (0.9%) 触发 REJECT_PACKAGING (>= 0.50)
+
+### M7.3 — 养流水因果去噪
+
+**算法**:
+- 5 个 `INST__` 还款列 + 4 个 `CC_/POS_` 消费列 z-score 后取均值
+- `causal_consistency = (sign(rep) × sign(con) + 1) / 2`, 范围 [0, 1]
+- `inflation = clip((1 - consistency) × 0.15 × 5, 0, 0.15)`
+- `denoised_P = min(1, P(default) + inflation)`
+
+**1K 测试子集平均去噪膨胀**: 0.15 (即一致性普遍 < 0.5, denoising_action 几乎全员 FLAG_FOR_REVIEW)。
+
+**工程说明**: 当前一致性偏低是 Home Credit 合成特征的属性 (INST/CC 列的 z-score 几乎正交), 真实业务数据上应能区分养流水 vs 真实用户。
+
+### M7.4 — 端到端 routing 分布
+
+| 路由 | 占比 | 触发条件 |
+|------|-----:|---------|
+| REVIEW_BORDERLINE | 91.4% | 任意信号 [0.3, threshold) |
+| PROCEED | 5.2% | 全部干净 |
+| REJECT_FRAUD | 2.5% | fraud_score >= 0.10 |
+| REJECT_PACKAGING | 0.9% | packaging_score >= 0.50 |
+
+**Pipeline 净增耗时**: +10.4s (184.5s → 194.9s, +5.6%)。
+
+---
+
 ## 9. 单元测试
 
 | 项 | 数值 |
 |----|------|
-| 测试文件 | **16** |
-| 测试用例 | **108** |
-| 全跑耗时 | 7.69s |
+| 测试文件 | **19** |
+| 测试用例 | **133** |
+| 全跑耗时 | 8.0s |
 | 通过率 | 100% |
 
 `tests/test_aggregation.py` (16 用例) 覆盖：
@@ -264,11 +317,11 @@ Optuna 找到的最优参数：低学习率 (0.014) + 高子采样 (0.92) + 中�
 
 ```
 output/
-├── figures/                              # 11 PNG (命名 01_..11_)
+├── figures/                              # 14 PNG (M0-M6: 01_..11_, M7: 12_14_)
 ├── decision_reports/
-│   ├── HC_*.json                         # 3 份决策报告
-│   ├── HC_*.md                           # 3 份证据链报告
-│   ├── pipeline_summary.json             # 主指标
+│   ├── HC_*.json                         # 3 份决策报告 (M7 注入 fraud 字段)
+│   ├── HC_*.md                           # 3 份证据链报告 (M7 追加反欺诈表)
+│   ├── pipeline_summary.json             # 主指标 (含 anti_fraud 段)
 │   └── pipeline_timings.json             # per-step 耗时
 ├── models/
 │   └── registry_v1.pkl                   # API 缓存

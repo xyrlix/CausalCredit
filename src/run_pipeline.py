@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CausalCredit: 13-Step End-to-End Pipeline (Home Credit).
+"""CausalCredit: 14-Step End-to-End Pipeline (Home Credit).
 
 Usage:
     python -m src.run_pipeline
@@ -8,8 +8,10 @@ Steps (per docs/CausalCredit_完整实现计划书.md):
   1.  Data loading
   2.  Data validation
   3.  Data cleaning + sentinel fixes
+  3.5 Multi-table aggregation (8 tables, M5+)
   4.  Feature engineering (causal-guided subset)
   5.  Train/test split
+  5.5 L1 feature pre-screening (LightGBM gain, M5+)
   6.  Model training (LightGBM downstream, GBT baseline)
   7.  Model evaluation + Isotonic calibration
   8.  Causal discovery (PC + NOTEARS + domain knowledge injection)
@@ -18,9 +20,10 @@ Steps (per docs/CausalCredit_完整实现计划书.md):
   11. Refutation report
   12. SHAP + four-quadrant consistency
   13. Counterfactual + decision reports
+  14. Anti-fraud (3-class + packaging + denoising) -- M7
 
 Outputs:
-  output/figures/01..11_*.png  (11 charts)
+  output/figures/01..14_*.png  (14 charts)
   output/decision_reports/HC_*.json + .md  (3 applicants)
   output/decision_reports/pipeline_summary.json
 """
@@ -90,6 +93,32 @@ def print_section(title: str) -> None:
 
 def print_subsection(title: str) -> None:
     print(f"\n  --- {title} ---")
+
+
+def _format_fraud_section(fr: Dict) -> str:
+    """Format the fraud sub-report as a markdown section (M7)."""
+    lines = [
+        "## 反欺诈三件套评分 (M7 Anti-Fraud Three-Pack)\n",
+        "| 指标 | 数值 | 解读 |",
+        "|------|------|------|",
+        f"| **fraud_score** | {fr['fraud_score']:.4f} | P(default) × P(fraudulent \\| default) |",
+        f"| P(fraudulent) | {fr['defaulter_sub_proba']['fraudulent']:.4f} | 三分类-恶意欺诈 |",
+        f"| P(non_malicious) | {fr['defaulter_sub_proba']['non_malicious']:.4f} | 三分类-非恶意违约 |",
+        f"| P(systemic) | {fr['defaulter_sub_proba']['systemic']:.4f} | 三分类-系统性风险 |",
+        f"| **packaging_score** | {fr['packaging_score']:.3f} | UNTRUSTED / (TRUSTED+UNTRUSTED) in top-K SHAP |",
+        f"| path_integrity | {fr['path_integrity']:.3f} | 收入→消费→还款 路径完整度 |",
+        f"| denoised_default_proba | {fr['denoised_default_proba']:.4f} | do(去除养流水) 后 P(default) |",
+        f"| causal_consistency | {fr['causal_consistency']:.2f} | 还款↔消费 一致性 |",
+        f"| inflation_strength | {fr['inflation_strength']:.4f} | 估计的养流水膨胀量 |",
+        f"| **routing** | `{fr['routing']}` | 反欺诈路由决策 |",
+        "",
+    ]
+    if fr.get("routing_reasons"):
+        lines.append("**路由理由**:")
+        for s in fr["routing_reasons"]:
+            lines.append(f"- {s}")
+        lines.append("")
+    return "\n".join(lines)
 
 
 def _t(t0_step: float, step_name: str = "", timings: Optional[List] = None) -> float:
@@ -609,6 +638,182 @@ def run() -> int:
     )
     _t(t_step, "step_13_counterfactual_decision", step_times)
 
+    # ============================================================
+    # STEP 14 — ANTI-FRAUD (3-class + packaging + denoising)  M7
+    # ============================================================
+    print_section("STEP 14: ANTI-FRAUD (3-class + packaging + denoising)")
+    t_step = time.time()
+
+    from src.fraud import FraudGuard
+
+    # Re-attach row-level SHAP values for fq (we need per-applicant shap)
+    # Reuse the SHAP values computed in STEP 12 (stored in `shap_values`)
+    fq_per_applicant = dict(fq)  # shallow copy
+    # We need per-applicant row SHAP for the packaging detector.
+    # The global `fq` was computed on a subsample; rebuild a per-applicant
+    # fq that uses the 3 picked applicants' SHAP.
+    fq_for_3 = {
+        "per_feature": fq["per_feature"].copy(),
+        "counts": fq["counts"].copy(),
+        "thresholds": fq["thresholds"],
+        "causal_features": fq["causal_features"],
+    }
+
+    # Train the guard on a stratified subsample of train (saves ~30s vs full)
+    print("  Training FraudGuard on stratified subsample (50K)...")
+    sub_n = min(50_000, len(X_train))
+    rng = np.random.default_rng(42)
+    sub_idx = rng.choice(len(X_train), size=sub_n, replace=False)
+    X_sub = X_train.iloc[sub_idx]
+    y_sub = y_train.iloc[sub_idx]
+    guard = FraudGuard(
+        classifier_params={
+            "n_estimators": 200, "max_depth": 6, "learning_rate": 0.05,
+            "subsample": 0.8, "colsample_bytree": 0.8, "min_child_samples": 50,
+            "random_state": 42, "n_jobs": -1, "verbosity": -1,
+        }
+    )
+    guard.fit(X_sub, y_sub, fq_for_3)
+
+    # Score the 3 selected applicants
+    print("  Scoring 3 selected applicants with FraudGuard...")
+    # Compute per-applicant SHAP for the 3 selected applicants and the
+    # 1K chart sample — needed by the packaging detector to compute a
+    # per-applicant four-quadrant classification.
+    print("  Computing per-applicant SHAP for fraud scoring...")
+    import shap as _shap
+    explainer = _shap.TreeExplainer(lgbm_model)
+    chart_idx = np.random.default_rng(0).choice(len(X_test), size=min(1000, len(X_test)), replace=False)
+    sv_chart = explainer.shap_values(X_test.iloc[chart_idx])
+    if isinstance(sv_chart, list):  # binary LightGBM returns list of 2 arrays
+        sv_chart = sv_chart[1]
+    sv_selected = []
+    for pos in selected_positions:
+        sv = explainer.shap_values(X_test.iloc[[pos]])
+        if isinstance(sv, list):
+            sv = sv[1]
+        sv_selected.append(sv[0])
+
+    fraud_per_applicant = []
+    for pos, sv_row in zip(selected_positions, sv_selected):
+        r = guard.score_one(
+            X_test.iloc[pos:pos + 1],
+            default_proba=float(y_prob[pos]),
+            four_quadrant=fq_for_3,
+            applicant_idx=0,
+            row_shap=sv_row,
+        )
+        fraud_per_applicant.append(r)
+
+    # Batch-score a test subsample for charts (1K rows)
+    n_chart = len(chart_idx)
+    print(f"  Batch scoring {n_chart} test applicants for charts...")
+    batch_df = guard.score_batch(
+        X_test.iloc[chart_idx],
+        default_proba=y_prob[chart_idx],
+        four_quadrant=fq_for_3,
+        shap_values=sv_chart,
+    )
+
+    # Inject fraud fields into the existing decision reports
+    for report, fr in zip(decision_reports, fraud_per_applicant):
+        report["fraud"] = {
+            "fraud_score": fr["fraud_score"],
+            "defaulter_sub_proba": fr["defaulter_sub_proba"],
+            "packaging_score": fr["packaging_score"],
+            "path_integrity": fr["path_integrity"],
+            "denoised_default_proba": fr["denoised_default_proba"],
+            "causal_consistency": fr["causal_consistency"],
+            "inflation_strength": fr["inflation_strength"],
+            "routing": fr["routing"],
+            "routing_reasons": fr["routing_reasons"],
+        }
+        # Save updated JSON
+        json_path = output_dec / f"{report['applicant_id']}.json"
+        with open(json_path, "w") as f:
+            json.dump(report, f, indent=2, ensure_ascii=False)
+        # Update markdown to include fraud section
+        md_path = output_dec / f"{report['applicant_id']}.md"
+        if md_path.exists():
+            existing = md_path.read_text(encoding="utf-8")
+            fraud_section = _format_fraud_section(fr)
+            with open(md_path, "w", encoding="utf-8") as f:
+                f.write(existing + "\n\n" + fraud_section)
+
+    # Chart 12: fraud score distribution (test sample)
+    fig, axes = plt.subplots(1, 2, figsize=(13, 4.5))
+    ax = axes[0]
+    ax.hist(batch_df["fraud_score"], bins=40, color="#d62728", alpha=0.85, edgecolor="black")
+    ax.set_xlabel("fraud_score = P(default) × P(fraudulent | default)")
+    ax.set_ylabel("# applicants")
+    ax.set_title(f"Fraud score distribution (n={len(batch_df)} test)")
+    ax.axvline(0.10, color="black", linestyle="--", label="REJECT threshold (0.10)")
+    ax.legend()
+    ax.set_yscale("symlog", linthresh=1)
+
+    # Chart 12b: routing pie
+    ax = axes[1]
+    routing_counts = batch_df["routing"].value_counts()
+    colors = {
+        "PROCEED": "#2ca02c", "REVIEW_BORDERLINE": "#ff7f0e",
+        "REVIEW_DENOISED": "#9467bd", "REJECT_PACKAGING": "#d62728",
+        "REJECT_FRAUD": "#8c564b",
+    }
+    ax.pie(
+        routing_counts.values,
+        labels=[f"{lbl}\n({c})" for lbl, c in routing_counts.items()],
+        colors=[colors.get(lbl, "#7f7f7f") for lbl in routing_counts.index],
+        autopct="%1.1f%%", startangle=90,
+    )
+    ax.set_title("Anti-fraud routing distribution")
+    fig.tight_layout()
+    fig.savefig(output_fig / "12_fraud_score_routing.png", dpi=120, bbox_inches="tight")
+    plt.close(fig)
+
+    # Chart 13: packaging_score vs path_integrity scatter
+    fig, ax = plt.subplots(figsize=(7, 5))
+    sc = ax.scatter(
+        batch_df["path_integrity"], batch_df["packaging_score"],
+        c=batch_df["routing"].map({v: i for i, v in enumerate(colors)}),
+        cmap="RdYlGn_r", s=20, alpha=0.7, edgecolors="black", linewidth=0.3,
+    )
+    ax.axhline(0.5, color="black", linestyle="--", alpha=0.5, label="packaging REJECT")
+    ax.axhline(0.3, color="gray", linestyle=":", alpha=0.5, label="borderline")
+    ax.set_xlabel("path_integrity (income→consumption→repayment chain)")
+    ax.set_ylabel("packaging_score (1 − credible / total)")
+    ax.set_title("Packaging detection: path integrity vs UNTRUSTED fraction")
+    ax.legend(loc="best")
+    fig.tight_layout()
+    fig.savefig(output_fig / "13_packaging_scatter.png", dpi=120, bbox_inches="tight")
+    plt.close(fig)
+
+    # Chart 14: denoising — denoised vs original P(default)
+    fig, ax = plt.subplots(figsize=(7, 5))
+    # Compute per-applicant denoised P(default) for the chart sample
+    denoised = []
+    for i, idx in enumerate(chart_idx):
+        d = guard.denoising.score_one(
+            X_test.iloc[[idx]], default_proba=float(y_prob[idx])
+        )
+        denoised.append(d["denoised_default_proba"])
+    denoised = np.array(denoised)
+    ax.scatter(y_prob[chart_idx], denoised, s=12, alpha=0.6, c="#1f77b4", edgecolors="none")
+    lo = min(y_prob[chart_idx].min(), denoised.min())
+    hi = max(y_prob[chart_idx].max(), denoised.max())
+    ax.plot([lo, hi], [lo, hi], "k--", alpha=0.5, label="y=x (no change)")
+    ax.set_xlabel("Original P(default) — model output")
+    ax.set_ylabel("Denoised P(default) — after do(去除养流水)")
+    ax.set_title("Causal denoising: manufactured history effect")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(output_fig / "14_denoising_effect.png", dpi=120, bbox_inches="tight")
+    plt.close(fig)
+
+    _t(t_step, "step_14_anti_fraud", step_times)
+    print(f"  fraud_score range: {batch_df['fraud_score'].min():.4f} – {batch_df['fraud_score'].max():.4f}")
+    print(f"  packaging_score range: {batch_df['packaging_score'].min():.3f} – {batch_df['packaging_score'].max():.3f}")
+    print(f"  routing distribution: {routing_counts.to_dict()}")
+
     # Pipeline summary
     summary = {
         "model": {
@@ -632,6 +837,20 @@ def run() -> int:
             "robustness_score": float(robustness),
             "passed": {m: bool(r.get("passed")) for m, r in ref_results.items()},
         },
+        "anti_fraud": {
+            "fraud_score_range": [
+                float(batch_df["fraud_score"].min()),
+                float(batch_df["fraud_score"].max()),
+            ],
+            "packaging_score_range": [
+                float(batch_df["packaging_score"].min()),
+                float(batch_df["packaging_score"].max()),
+            ],
+            "routing_distribution": {str(k): int(v) for k, v in routing_counts.to_dict().items()},
+            "denoised_mean_inflation": float(
+                (batch_df["denoised_default_proba"] - batch_df["default_proba"]).mean()
+            ),
+        },
         "decision_reports": [
             {"applicant_id": r["applicant_id"], "score": r["score"], "risk_grade": r["risk_grade"]}
             for r in decision_reports
@@ -652,6 +871,8 @@ def run() -> int:
     print(f"  Model: AUC={metrics['auc_roc']:.4f}  Acc={metrics['accuracy']:.4f}")
     print(f"  CATE:  mean_abs_spearman={cv_result['mean_abs_spearman']:.3f}")
     print(f"  Refutation: robustness={robustness:.2f}")
+    fraud_print = ", ".join(f"{k}={v}" for k, v in routing_counts.to_dict().items())
+    print(f"  Anti-fraud: {fraud_print}")
     print(f"  Decision: {len(decision_reports)} reports -> {output_dec}")
     print()
     print("  per-step timings (s):")

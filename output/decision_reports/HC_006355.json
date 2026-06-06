@@ -1,6 +1,6 @@
 {
   "applicant_id": "HC_006355",
-  "timestamp": "2026-06-06T04:27:38.577841Z",
+  "timestamp": "2026-06-06T11:10:25.461830Z",
   "default_probability": 0.8955,
   "score": 319,
   "risk_grade": "E",
@@ -44,5 +44,22 @@
     "Refutation robustness score: 0.75"
   ],
   "counterfactual_recommendations": [],
-  "causal_narrative": "Default risk is 89.55% (score=319, grade E). Primary driver: EXT_SOURCE_2 (SHAP=+0.9425, quadrant=TRUSTED). Heterogeneous effect estimate: |CATE|=0.0000."
+  "causal_narrative": "Default risk is 89.55% (score=319, grade E). Primary driver: EXT_SOURCE_2 (SHAP=+0.9425, quadrant=TRUSTED). Heterogeneous effect estimate: |CATE|=0.0000.",
+  "fraud": {
+    "fraud_score": 0.0005089224277543468,
+    "defaulter_sub_proba": {
+      "fraudulent": 0.0005683184266559841,
+      "non_malicious": 0.999431681573344,
+      "systemic": 0.0
+    },
+    "packaging_score": 0.37037037037037035,
+    "path_integrity": 1.0,
+    "denoised_default_proba": 1.0,
+    "causal_consistency": 0.5,
+    "inflation_strength": 0.15,
+    "routing": "REVIEW_BORDERLINE",
+    "routing_reasons": [
+      "packaging_score=0.370 in [0.30, 0.50) borderline"
+    ]
+  }
 }
