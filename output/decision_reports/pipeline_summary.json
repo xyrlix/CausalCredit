@@ -1,9 +1,9 @@
 {
   "model": {
-    "lgbm_cv_auc": 0.7762637131094506,
-    "lgbm_test_auc": 0.780302,
-    "lgbm_test_accuracy": 0.919906,
-    "lgbm_test_f1": 0.076952
+    "lgbm_cv_auc": 0.7755528205070129,
+    "lgbm_test_auc": 0.780322,
+    "lgbm_test_accuracy": 0.919917,
+    "lgbm_test_f1": 0.073489
   },
   "discovery": {
     "n_pc_edges": 37,
@@ -36,13 +36,13 @@
       "risk_grade": "A"
     },
     {
-      "applicant_id": "HC_019278",
+      "applicant_id": "HC_036837",
       "score": 810,
       "risk_grade": "A"
     },
     {
       "applicant_id": "HC_006355",
-      "score": 318,
+      "score": 319,
       "risk_grade": "E"
     }
   ]

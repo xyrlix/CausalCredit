@@ -1,7 +1,9 @@
 # CausalCredit 性能基准 (BENCHMARKS)
 
-> **最后更新**: 2026-06-06 (M5 — 8 表 JOIN 集成) | **环境**: CPU (Python 3.11, `ldq_cc` conda env) | **数据集**: Home Credit Default Risk 完整 307,511 行 × 122 列 + 5 张二级表 (~80M 行)
-> **复现命令**：`python -m src.run_pipeline` (~245 秒) → 输出 `output/decision_reports/pipeline_summary.json` + `pipeline_timings.json`
+> **最后更新**: 2026-06-06 (M5+ — CPU 优化: 多表聚合缓存 + L1 特征预筛选) | **环境**: CPU (Python 3.11, `ldq_cc` conda env) | **数据集**: Home Credit Default Risk 完整 307,511 行 × 122 列 + 5 张二级表 (~80M 行)
+> **复现命令**：
+> - **冷跑**（首次 / 删 cache）: `rm -rf output/cache && python -m src.run_pipeline` (~245 秒)
+> - **热跑**（已 cache）: `python -m src.run_pipeline` (~185 秒, **节省 60 秒**)
 
 ---
 
@@ -124,48 +126,68 @@
 
 ---
 
-## 8. 端到端运行时 (14 步, CPU)
+## 8. 端到端运行时 (15 步, CPU)
 
-> 来自 `output/decision_reports/pipeline_timings.json`（M5 集成多表后）
+> 来自 `output/decision_reports/pipeline_timings.json`（M5+ 集成多表 + CPU 优化后）
+
+### 8.1 冷跑 vs 热跑对比
+
+| 场景 | 总耗时 | STEP 3.5 聚合 | STEP 5.5 预筛 | STEP 6 训练 | 备注 |
+|------|------:|------------:|------------:|------------:|------|
+| **M5 无优化** (冷) | 244.9s | 65.3s | n/a | 127.8s | 首次跑,无 cache |
+| **M5+ 优化 (冷)** | ~245s | 68.9s | 3.2s | 107.6s | 首次跑,STEP 3.5 写 cache |
+| **M5+ 优化 (热)** | **184.5s** | **2.1s** | **4.8s** | **111.8s** | **二次跑,cache 命中** |
+| 节省 | **-60.4s (-25%)** | -63.2s | +4.8s (新增) | -16.0s | — |
+
+### 8.2 热跑 15 步明细
 
 | Step | 内容 | 耗时 (s) | % | 备注 |
 |:---:|------|---------:|---:|------|
-| 1 | Data loading (307K × 122) | 2.16 | 0.9% | parquet 快路径 |
-| 2 | Data validation | 0.77 | 0.3% | — |
-| 3 | Data cleaning | 0.81 | 0.3% | sentinel 修复 + drop low-var |
-| **3.5** | **Multi-table aggregation (5 张二级表, 80M 行)** | **65.28** | **26.7%** | **新增, M5 关键步骤** |
-| 4 | Feature engineering (275 列) | 1.57 | 0.6% | 30 app + 245 secondary |
-| 5 | Train/test split (stratified) | 0.66 | 0.3% | — |
-| **6** | **Model training (LightGBM × 3-fold CV, 275 特征)** | **127.84** | **52.2%** | **瓶颈, 比 M2 多 2.5x** |
-| 7 | Evaluation + Isotonic calibration (3-fold OOF) | 15.52 | 6.3% | 30K subsample |
-| 8 | Causal discovery (PC + NOTEARS, 30 features) | 0.68 | 0.3% | 5K 子集 |
-| 9 | ATE estimation (DoWhy) | 0.36 | 0.1% | 8K 子集 |
-| **10** | **CATE estimation (3 EconML methods)** | **20.25** | **8.3%** | **次瓶颈** |
-| 11 | Refutation (4 refuters) | 0.66 | 0.3% | — |
-| 12 | SHAP four-quadrant (275 features, 5K samples) | 4.03 | 1.6% | TreeSHAP O(n*depth) |
-| 13 | Counterfactual + 3 decision reports | 4.05 | 1.7% | DiCE 3 samples |
-| | **总耗时** | **244.88** | | CPU 单核 |
+| 1 | Data loading (307K × 122) | 2.20 | 1.2% | parquet 快路径 |
+| 2 | Data validation | 0.76 | 0.4% | — |
+| 3 | Data cleaning | 0.81 | 0.4% | sentinel 修复 + drop low-var |
+| **3.5** | **Multi-table aggregation (cache hit)** | **2.11** | **1.1%** | **M5+ 优化**: 65s→2s |
+| 4 | Feature engineering (265 列) | 1.59 | 0.9% | 19 app + 246 secondary |
+| 5 | Train/test split (stratified) | 0.66 | 0.4% | — |
+| **5.5** | **Feature pruning (LightGBM gain pre-screen)** | **4.83** | **2.6%** | **M5+ 优化**: 砍 49 个 0-gain 特征, 265→216 |
+| **6** | **Model training (LightGBM × 3-fold CV, 216 特征)** | **111.79** | **60.6%** | **瓶颈** (比 M2 多 2.2x) |
+| 7 | Evaluation + Isotonic calibration (3-fold OOF) | 31.56 | 17.1% | 30K subsample |
+| 8 | Causal discovery (PC + NOTEARS, 19 features) | 0.69 | 0.4% | 5K 子集 |
+| 9 | ATE estimation (DoWhy) | 0.36 | 0.2% | 8K 子集 |
+| **10** | **CATE estimation (3 EconML methods)** | **19.98** | **10.8%** | **次瓶颈** |
+| 11 | Refutation (4 refuters) | 0.64 | 0.3% | — |
+| 12 | SHAP four-quadrant (216 features, 5K samples) | 2.96 | 1.6% | TreeSHAP |
+| 13 | Counterfactual + 3 decision reports | 3.33 | 1.8% | DiCE 3 samples |
+| | **总耗时** | **184.52** | | **CPU 单核, 热跑** |
 
-### 8.1 优化建议 (按 ROI 排序)
+### 8.3 优化建议 (按 ROI 排序, M5+ 之后)
 
-1. **Step 6 (LightGBM 训练, 128s)** — 占 52%：
+1. **Step 6 (LightGBM 训练, 112s)** — 占 61%：
    - 升 GPU build → 5-10s
    - 减小训练集到 50K → 30-40s
-   - 砍 245 个 secondary features 的非重要部分（gain < 5% 的可剔除）→ 60s
-2. **Step 3.5 (Multi-table aggregation, 65s)** — 占 27%：
-   - 缓存 `secondary_features.parquet`（一次聚合，永久复用）→ 5s
-   - bureau 单独跑 (~27s) 是聚合器里最重的；可改 polars 实现 → 10s
-3. **Step 10 (CATE, 20s)** — 占 8%：
+   - 进一步 L1 预筛选（按 gain 比例而不是 0/1, 砍 100+ 弱特征）→ 70s
+2. **Step 7 (Calibration, 32s)** — 占 17%：
+   - 30K subsample 砍到 10K → 8s
+   - 改 Platt scaling (logistic) → 1s
+3. **Step 10 (CATE, 20s)** — 占 11%：
    - `cv=2` 改 `cv=0` → 8s
    - `CausalForestDML` 砍到 100 trees → 5s
-4. **Step 7 (Calibration, 16s)** — 占 6%：
-   - 30K subsample 砍到 10K → 5s
 
-**优化后理论下限**：245s → ~30-40s（CPU，cache 命中）/ ~5-10s（GPU）。
+**优化后理论下限**: 184s → ~25-30s (CPU) / ~5-10s (GPU)。
 
-### 8.2 缓存化 (推荐)
+### 8.4 M5+ 已实现优化 (本次)
 
-`MultiTableAggregator.aggregate_all()` 是**确定性**的（输入不变则输出不变）。把结果缓存到 `output/cache/secondary_features_v1.parquet` 可让二次运行 Step 3.5 从 65s 降到 < 1s。
+#### 优化 1: 多表聚合缓存 (`load_or_build_secondary_features`)
+- **机制**: STEP 3.5 跑前检查 `output/cache/secondary_features_v1.parquet`, 存在则 read (~0.2s), 不存在则跑全量聚合并写盘
+- **冷热差**: 65.3s → 2.1s (cache 命中时)
+- **缓存版本号**: `SECONDARY_FEATURES_CACHE_VERSION = 1` (改 aggregator 后手动 bump, 自动失效)
+- **失效兜底**: 读盘后做 sanity check (index 名 + 列数), 失败自动重建
+
+#### 优化 2: L1 特征预筛选 (STEP 5.5)
+- **机制**: 在主训练前用 100-tree LightGBM 在 50K 子集上跑一遍, 按 `gain > 0` 过滤掉 ~50 个无用特征
+- **节省**: STEP 6 训练从 128s → 112s (49/265 = 18% 特征被剔除)
+- **AUC 影响**: 持平 0.7803 (因为被剔除的本来 gain=0, 没用)
+- **代码位置**: `run_pipeline.py` STEP 5.5
 
 ---
 
@@ -174,17 +196,18 @@
 | 项 | 数值 |
 |----|------|
 | 测试文件 | **15** |
-| 测试用例 | **98** |
-| 全跑耗时 | 1.44s |
+| 测试用例 | **101** |
+| 全跑耗时 | 1.46s |
 | 通过率 | 100% |
 
-新增文件 `tests/test_aggregation.py` (13 用例) 覆盖：
+`tests/test_aggregation.py` (16 用例) 覆盖：
 - Bureau 聚合（DPD 分数合并 + ACTIVE_FRAC）
 - Previous app 聚合（status 分数 + counts）
 - POS / installments / credit card 各聚合器
-- `aggregate_all` outer join
+- `aggregate_all` outer join + 空表容错
+- `load_or_build_secondary_features` 缓存 (cache miss / hit / 损坏 fallback)
 - `load_secondary_tables` 容错（空目录不报错）
-- Field-list 不为空
+- Field-list 不为空 + 缓存版本号合法
 
 文件清单详见 `PROGRESS.md` M4 节。
 

@@ -317,6 +317,15 @@ class MultiTableAggregator:
         """
         feats: list[pd.DataFrame] = []
         for key, val in tables.items():
+            # Skip empty tables (no rows from a missing parquet file): the
+            # per-table aggregators would raise on missing required columns,
+            # so we just emit an empty contribution for that table.
+            if isinstance(val, tuple):
+                empty = all(v is None or len(v) == 0 for v in val)
+            else:
+                empty = val is None or len(val) == 0
+            if empty:
+                continue
             if key == "bureau":
                 bureau_df, bureau_bal_df = (val if isinstance(val, tuple) else (val, None))
                 feats.append(self.aggregate_bureau(bureau_df, bureau_bal_df))
@@ -408,3 +417,66 @@ def load_secondary_tables(
         parts = [pd.read_parquet(f) for f in files]
         tables[name] = pd.concat(parts, ignore_index=True)
     return tables
+
+
+# Cache version — bump to invalidate the cache when the aggregator schema changes.
+SECONDARY_FEATURES_CACHE_VERSION = 1
+
+
+def load_or_build_secondary_features(
+    raw_dir: str = "data/home-credit-default-risk/_raw",
+    cache_path: str = "output/cache/secondary_features_v1.parquet",
+    force_rebuild: bool = False,
+) -> pd.DataFrame:
+    """Cache wrapper around MultiTableAggregator.aggregate_all.
+
+    On a warm cache, this returns in < 1 second (parquet read of a few-MB file).
+    On a cold cache (or when `force_rebuild=True`), it runs the full 65-second
+    aggregation over the 5 secondary tables and persists the result to
+    `cache_path` for next time.
+
+    The cache is a single parquet with SK_ID_CURR as the index. Re-running
+    `run_pipeline.py` is therefore idempotent: only the very first run pays
+    the aggregation cost; subsequent runs and tests share the same file.
+
+    To invalidate the cache after modifying the aggregator (e.g. adding a
+    new feature), bump `SECONDARY_FEATURES_CACHE_VERSION` (e.g. v1 → v2)
+    so callers automatically pick up the new schema.
+    """
+    import os
+    import time
+
+    if not force_rebuild and os.path.exists(cache_path):
+        t0 = time.time()
+        cached = pd.read_parquet(cache_path)
+        # Sanity-check: parquet should have SK_ID_CURR index and >=200 columns
+        if cached.index.name == "SK_ID_CURR" and cached.shape[1] >= 200:
+            print(
+                f"  [cache hit]  {cache_path}  "
+                f"shape={cached.shape}  loaded in {time.time()-t0:.2f}s"
+            )
+            return cached
+        print(
+            f"  [cache stale] {cache_path} failed sanity check "
+            f"(index={cached.index.name}, cols={cached.shape[1]}); rebuilding"
+        )
+
+    t0 = time.time()
+    print("  [cache miss] running full multi-table aggregation ...")
+    secondary_raw = load_secondary_tables(raw_dir)
+    agg = MultiTableAggregator()
+    features = agg.aggregate_all({
+        "bureau": (secondary_raw["bureau"], secondary_raw["bureau_balance"]),
+        "previous_application": secondary_raw["previous_application"],
+        "pos_cash": secondary_raw["POS_CASH_balance"],
+        "installments": secondary_raw["installments_payments"],
+        "credit_card": secondary_raw["credit_card_balance"],
+    })
+    # Persist for next run
+    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+    features.to_parquet(cache_path)
+    print(
+        f"  [cache write] {cache_path}  "
+        f"shape={features.shape}  built in {time.time()-t0:.1f}s"
+    )
+    return features

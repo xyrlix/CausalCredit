@@ -180,18 +180,11 @@ def run() -> int:
     # =========================================================================
     print_section("STEP 3.5: MULTI-TABLE AGGREGATION (bureau + prev + POS + installments + credit_card)")
     t_step = time.time()
-    from src.features.aggregation import MultiTableAggregator, load_secondary_tables
-    secondary_raw = load_secondary_tables("data/home-credit-default-risk/_raw")
-    secondary_n_rows = {k: v.shape[0] for k, v in secondary_raw.items()}
-    print(f"  raw secondary tables (rows): {secondary_n_rows}")
-    agg = MultiTableAggregator()
-    secondary_features = agg.aggregate_all({
-        "bureau": (secondary_raw["bureau"], secondary_raw["bureau_balance"]),
-        "previous_application": secondary_raw["previous_application"],
-        "pos_cash": secondary_raw["POS_CASH_balance"],
-        "installments": secondary_raw["installments_payments"],
-        "credit_card": secondary_raw["credit_card_balance"],
-    })
+    from src.features.aggregation import load_or_build_secondary_features
+    secondary_features = load_or_build_secondary_features(
+        raw_dir="data/home-credit-default-risk/_raw",
+        cache_path="output/cache/secondary_features_v1.parquet",
+    )
     print(f"  aggregated feature matrix: {secondary_features.shape}")
     df = df.merge(secondary_features, left_on="SK_ID_CURR", right_index=True, how="left")
     df = df.fillna(0)  # applicants with no bureau/prev records get 0
@@ -250,6 +243,41 @@ def run() -> int:
     print(f"  train: {len(X_train)} ({y_train.mean():.4f} default rate)")
     print(f"  test:  {len(X_test)} ({y_test.mean():.4f} default rate)")
     _t(t_step, "step_5_train_test_split", step_times)
+
+    # =========================================================================
+    # STEP 5.5 — FEATURE PRUNING (L1-style: drop features with ~0 LightGBM gain)
+    # =========================================================================
+    print_section("STEP 5.5: FEATURE PRUNING (LightGBM gain pre-screen)")
+    t_step = time.time()
+    n_pre = X_train.shape[1]
+    # Quick model on a 50K subset (~5-8s on CPU)
+    n_sub = min(50_000, len(X_train))
+    sub_idx = np.random.RandomState(42).choice(len(X_train), size=n_sub, replace=False)
+    import lightgbm as lgb
+    quick = lgb.LGBMClassifier(
+        n_estimators=100, max_depth=6, learning_rate=0.1, num_leaves=31,
+        subsample=0.8, colsample_bytree=0.8, min_child_samples=100,
+        n_jobs=-1, verbosity=-1, random_state=42,
+    )
+    quick.fit(X_train.iloc[sub_idx], y_train.iloc[sub_idx])
+    gain = pd.Series(quick.feature_importances_, index=X_train.columns)
+    keep = gain[gain > 0].index.tolist()  # drop features with gain==0 (i.e. unused)
+    n_dropped = n_pre - len(keep)
+    print(f"  quick model: {n_sub} train rows, 100 trees")
+    print(f"  features before: {n_pre}")
+    print(f"  features after:  {len(keep)}  (dropped {n_dropped} with zero gain)")
+    # Apply pruning to all downstream matrices + the feature_cols list
+    X_train = X_train[keep]
+    X_test = X_test[keep]
+    feature_cols = keep
+    # Note: imputation stats above are already fine (we don't refit); just re-assert
+    # no NaN sneaks in via the slimmed-down subset.
+    if X_train.isnull().any().any():
+        for c in X_train.columns[X_train.isnull().any()]:
+            X_train[c] = X_train[c].fillna(X_train[c].median())
+        for c in X_test.columns[X_test.isnull().any()]:
+            X_test[c] = X_test[c].fillna(X_train[c].median())
+    _t(t_step, "step_5_5_feature_pruning", step_times)
 
     # =========================================================================
     # STEP 6 — MODEL TRAINING (LightGBM downstream, GBT baseline)

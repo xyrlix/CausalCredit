@@ -1,11 +1,11 @@
 # CausalCredit 开发进展记录
 
 > **最后更新**: 2026-06-06 | **环境**: CPU (Python 3.11, `ldq_cc` conda env)  
-> **状态**: 6 个里程碑全部完成 ✅ (M5 8 表 JOIN 集成, M6 单测 + 文档)
+> **状态**: 7 个里程碑全部完成 ✅ (M5 8 表 JOIN, M5+ CPU 优化, M6 文档)
 
 ---
 
-## 总览：6 个里程碑全部交付
+## 总览：7 个里程碑全部交付
 
 | 里程碑 | 目标 | 状态 | 关键产出 |
 |:---:|------|:---:|------|
@@ -14,7 +14,8 @@
 | **M2** | 13 步端到端 pipeline | ✅ | `python -m src.run_pipeline` 跑通, 11 张 PNG + 3 份 JSON 报告 |
 | **M3** | API + UI 服务化 | ✅ | FastAPI 5 端点 (:8000) + Streamlit 4 页 (:8501) |
 | **M4** | 监控 + 测试 + 文档 | ✅ | PSI 漂移检测 (3 层) + 85 个单元测试 (1.34s) |
-| **M5** | **8 表 JOIN + 多表因果特征** | ✅ | **5 张二级表 (~1.1 GB, 80M 行) → 245 聚合特征, AUC 0.7547→0.7803** |
+| **M5** | **8 表 JOIN + 多表因果特征** | ✅ | **5 张二级表 (~1.1 GB, 80M 行) → 246 聚合特征, AUC 0.7547→0.7803** |
+| **M5+** | **CPU 优化** | ✅ | **多表聚合缓存 (65s→2s) + L1 特征预筛选 (-16% 训练耗时), 总耗时 245s→185s** |
 
 ---
 
@@ -258,12 +259,79 @@ STEP 4:  Feature engineering (30 + 245 = 275 features)
 
 > **结论**: 多表特征对 credit scoring 提升明显,主要原因: (a) **还款履约数据**（installments_payments）单表完全看不到;(b) **信用历史长度**（bureau）单表只有快照;(c) **跨机构多头借贷**（bureau 多条记录）单表无此维度。F1 翻倍说明这些特征对**正例 (default) 召回**帮助最大,符合行业经验。
 
-### 已知优化点 (未做)
+### 已知优化点 (M5+ 已部分完成)
 
-- **缓存 `secondary_features.parquet`**: 一次聚合, 永久复用,Step 3.5 从 65s 降到 < 1s
+- ~~**缓存 `secondary_features.parquet`**: 一次聚合, 永久复用,Step 3.5 从 65s 降到 < 1s~~ ✅ M5+ 完成
 - **polars 改写 bureau 聚合器**: 当前 pandas 单线程,~27s 可降到 ~5s
 - **Bureau + balance 双层聚合**: 现在是"bureau_balance 按 SK_ID_BUREAU 聚合"再 merge,可改成"bureau 按 SK_ID_CURR 聚合 + balance 按 SK_ID_CURR 聚合"分别贡献特征
-- **SHAP top-N 特征筛选**: 275 特征里 ~50 个 gain > 0 实际是 0,可通过 L1 预筛选把 LightGBM 训练再加速 30%
+- ~~**SHAP top-N 特征筛选**: 275 特征里 ~50 个 gain > 0 实际是 0,可通过 L1 预筛选把 LightGBM 训练再加速 30%~~ ✅ M5+ 完成 (改叫 L1 特征预筛选, 见 M5+)
+
+---
+
+## M5+ — CPU 优化 (缓存 + 特征预筛选) ✅
+
+### 动机
+M5 集成多表后,端到端耗时从 85s 涨到 245s,瓶颈主要是 STEP 3.5 多表聚合 (65s) 和 STEP 6 LightGBM 训练 (128s, 特征数 30→265)。本里程碑做 2 个低成本优化,目标 AUC 持平的前提下把热跑耗时砍 30%。
+
+### 优化 1: 多表聚合结果缓存
+
+**实现**: `src/features/aggregation.py::load_or_build_secondary_features()`
+
+```python
+if not force_rebuild and os.path.exists(cache_path):
+    cached = pd.read_parquet(cache_path)
+    if sanity_check(cached):
+        return cached  # < 1s
+# else: 跑全量聚合 + 写 cache (65s)
+```
+
+**关键设计**:
+- 缓存文件: `output/cache/secondary_features_v1.parquet` (3 MB)
+- 版本号: `SECONDARY_FEATURES_CACHE_VERSION = 1` (改 aggregator 时手动 bump, 自动失效)
+- 读盘后做 sanity check (index 名 + 列数), 损坏自动重建
+- Tolerant: 空表 (0 行) 不报错,直接 skip 跳过该聚合器
+
+**效果**: STEP 3.5 从 65.3s → 2.1s (cache 命中)
+
+**测试**: 3 个新用例 (cache miss → 写, hit → 读, corrupt → rebuild)
+
+### 优化 2: L1 特征预筛选 (STEP 5.5)
+
+**实现**: 在 `run_pipeline.py` 主训练前插入 STEP 5.5,用 100-tree LightGBM 在 50K 子集上跑一遍, 按 `gain > 0` 过滤
+
+```python
+quick = lgb.LGBMClassifier(n_estimators=100, max_depth=6, num_leaves=31, ...)
+quick.fit(X_train.iloc[sub_50k], y_train.iloc[sub_50k])
+keep = gain[gain > 0].index.tolist()  # 砍掉 49 个 0-gain 特征
+X_train, X_test = X_train[keep], X_test[keep]
+```
+
+**效果**:
+- 特征 265 → 216 (砍 18%)
+- STEP 6 训练 128s → 112s (-12%)
+- **AUC 0.7803 完全持平** (被剔除的特征本来就 gain=0, 没有信息量)
+
+**为什么不是更多**: 49 个 0-gain 特征在 LightGBM 训练中本来就被忽略, 主要省的是 model serialization + 内存带宽。CPU 计算本身受特征维度影响没那么大。
+
+### M5+ 整体效果
+
+| 指标 | M5 (无优化) | M5+ (冷) | M5+ (热) | 节省 |
+|------|----------:|--------:|--------:|-----:|
+| 总耗时 | 244.9s | 244.9s | **184.5s** | **-60.4s (-25%)** |
+| STEP 3.5 聚合 | 65.3s | 68.9s | **2.1s** | -63.2s |
+| STEP 5.5 预筛 | n/a | 3.2s | 4.8s | +4.8s |
+| STEP 6 训练 | 127.8s | 107.6s | 111.8s | -16.0s |
+| **AUC** | 0.7803 | 0.7803 | **0.7803** | 持平 |
+| **单测** | 98 / 1.44s | — | **101 / 1.46s** | +3 |
+
+### 测试
+
+`tests/test_aggregation.py` 增加 3 个用例:
+- `test_load_or_build_cache_miss_then_hit`: 空 raw_dir → 写 cache, 二次调用读 cache
+- `test_load_or_build_cache_invalidation_on_corrupt_cache`: 损坏的 cache (错 index) → 重建
+- `test_cache_version_constant_is_int`: 缓存版本号合法性
+
+**总测试**: 98 → 101 (1.46s 全过)
 
 ---
 

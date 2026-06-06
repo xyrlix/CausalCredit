@@ -1,0 +1,48 @@
+{
+  "applicant_id": "HC_036837",
+  "timestamp": "2026-06-06T04:27:38.487130Z",
+  "default_probability": 0.0488,
+  "score": 810,
+  "risk_grade": "A",
+  "decision_suggestion": "APPROVE — low expected loss",
+  "top_risk_factors": [
+    {
+      "feature": "EXT_SOURCE_2",
+      "value": 0.2652563401861944,
+      "shap": 0.3557728294459186,
+      "quadrant": "TRUSTED"
+    },
+    {
+      "feature": "EXT_SOURCE_3",
+      "value": 0.3842068130556564,
+      "shap": 0.29839962973562706,
+      "quadrant": "TRUSTED"
+    },
+    {
+      "feature": "BUREAU_TYPE_CAR_LOAN_FRAC",
+      "value": 0.5,
+      "shap": -0.21120789178797925,
+      "quadrant": "TRUSTED"
+    },
+    {
+      "feature": "AMT_GOODS_PRICE",
+      "value": 900000.0,
+      "shap": -0.18853592330142624,
+      "quadrant": "UNTRUSTED"
+    },
+    {
+      "feature": "INST_AMT_PAYMENT_SUM",
+      "value": 4828325.22,
+      "shap": -0.18415132922499963,
+      "quadrant": "UNTRUSTED"
+    }
+  ],
+  "cate_insights": [
+    "Heterogeneous treatment effect (CATE) for this applicant: 0.0000",
+    "Four-quadrant distribution: TRUSTED=64, UNTRUSTED=44, NEGLIGIBLE=64, MASKED=44",
+    "ATE estimate: 0.0000",
+    "Refutation robustness score: 0.75"
+  ],
+  "counterfactual_recommendations": [],
+  "causal_narrative": "Default risk is 4.88% (score=810, grade A). Primary driver: EXT_SOURCE_2 (SHAP=+0.3558, quadrant=TRUSTED). Heterogeneous effect estimate: |CATE|=0.0000."
+}
