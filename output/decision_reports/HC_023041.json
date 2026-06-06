@@ -1,0 +1,48 @@
+{
+  "applicant_id": "HC_023041",
+  "timestamp": "2026-06-06T03:56:56.443567Z",
+  "default_probability": 0.0024,
+  "score": 848,
+  "risk_grade": "A",
+  "decision_suggestion": "APPROVE — low expected loss",
+  "top_risk_factors": [
+    {
+      "feature": "DAYS_EMPLOYED",
+      "value": -13356.0,
+      "shap": -0.5720361387085239,
+      "quadrant": "TRUSTED"
+    },
+    {
+      "feature": "EXT_SOURCE_2",
+      "value": 0.7825659299420509,
+      "shap": -0.5312689506732114,
+      "quadrant": "TRUSTED"
+    },
+    {
+      "feature": "EXT_SOURCE_3",
+      "value": 0.6178261467332483,
+      "shap": -0.2164192568212441,
+      "quadrant": "TRUSTED"
+    },
+    {
+      "feature": "PREV_AMT_ANNUITY_MEAN",
+      "value": 82366.965,
+      "shap": -0.21148768633046264,
+      "quadrant": "TRUSTED"
+    },
+    {
+      "feature": "INST_NUM_INSTALMENT_VERSION_NUNIQUE",
+      "value": 15.0,
+      "shap": -0.17750839724113135,
+      "quadrant": "UNTRUSTED"
+    }
+  ],
+  "cate_insights": [
+    "Heterogeneous treatment effect (CATE) for this applicant: 0.0000",
+    "Four-quadrant distribution: TRUSTED=89, UNTRUSTED=44, NEGLIGIBLE=88, MASKED=44",
+    "ATE estimate: 0.0000",
+    "Refutation robustness score: 0.75"
+  ],
+  "counterfactual_recommendations": [],
+  "causal_narrative": "Default risk is 0.24% (score=848, grade A). Primary driver: DAYS_EMPLOYED (SHAP=-0.5720, quadrant=TRUSTED). Heterogeneous effect estimate: |CATE|=0.0000."
+}

@@ -1,11 +1,11 @@
 # CausalCredit 开发进展记录
 
 > **最后更新**: 2026-06-06 | **环境**: CPU (Python 3.11, `ldq_cc` conda env)  
-> **状态**: 5 个里程碑全部完成 ✅
+> **状态**: 6 个里程碑全部完成 ✅ (M5 8 表 JOIN 集成, M6 单测 + 文档)
 
 ---
 
-## 总览：5 个里程碑全部交付
+## 总览：6 个里程碑全部交付
 
 | 里程碑 | 目标 | 状态 | 关键产出 |
 |:---:|------|:---:|------|
@@ -13,7 +13,8 @@
 | **M1** | 5 个核心创新点 | ✅ | `tests/test_*.py` 6 个独立 demo + 9 张 M1 图表 |
 | **M2** | 13 步端到端 pipeline | ✅ | `python -m src.run_pipeline` 跑通, 11 张 PNG + 3 份 JSON 报告 |
 | **M3** | API + UI 服务化 | ✅ | FastAPI 5 端点 (:8000) + Streamlit 4 页 (:8501) |
-| **M4** | 监控 + 测试 + 文档 | ✅ | PSI 漂移检测 (3 层) + 77 个单元测试 (0.96s) |
+| **M4** | 监控 + 测试 + 文档 | ✅ | PSI 漂移检测 (3 层) + 85 个单元测试 (1.34s) |
+| **M5** | **8 表 JOIN + 多表因果特征** | ✅ | **5 张二级表 (~1.1 GB, 80M 行) → 245 聚合特征, AUC 0.7547→0.7803** |
 
 ---
 
@@ -150,8 +151,6 @@
 
 ## M4 — 监控 + 测试 + 文档 ✅
 
-### 漂移检测 (`src/monitoring/drift_detector.py`)
-
 `DriftDetector` 类提供 7 个方法：
 
 | 方法 | 用途 |
@@ -166,9 +165,10 @@
 
 **PSI 分级**：< 0.10 无漂移, 0.10-0.20 中等, ≥ 0.20 告警
 
-### 单元测试（14 个文件 / 85 用例 / 1.34s）
+### 单元测试（15 个文件 / 98 用例 / 1.44s）
 
 ```
+tests/test_aggregation.py       # 13 用例  多表聚合 (M5)
 tests/test_api_schemas.py       # 11 用例  Pydantic schema + service helpers
 tests/test_calibrate.py         #  6 用例  Isotonic Regression 单调性/边界
 tests/test_cate.py              # CATE 模块集成 (M1 demo)
@@ -183,6 +183,90 @@ tests/test_refute.py            # Refute 模块集成 (M1 demo)
 tests/test_refute_math.py       #  6 用例  E-value 公式/对称性/单调性
 tests/test_shap.py              # SHAP 模块集成 (M1 demo)
 ```
+
+---
+
+## M5 — 8 表 JOIN + 多表因果特征 ✅
+
+### 背景
+M2-M4 只用了 `application_train.csv` (单表, 122 列)。Home Credit 公开 Kaggle 比赛 0.81 AUC top-10% 选手的关键差异就是 8 表 join + 跨表聚合特征。本里程碑补齐这块。
+
+### 数据获取
+- **来源**: [HuggingFace `mohameddhameem/home-credit-default-risk`](https://huggingface.co/datasets/mohameddhameem/home-credit-default-risk) (Apache-2.0, 2026-05-30 snapshot)
+- **下载方式**: HF datasets-server API (无 Kaggle 凭证可用)
+- **总大小**: 1.1 GB, 6 张表 + 1 张主表
+
+| 表名 | 行数 | parquet 大小 | 备注 |
+|------|------|------------:|------|
+| application_train (已有) | 307,511 | 57 MB | 122 列 |
+| bureau | 29,016,353 | 64 MB | 19 列 |
+| bureau_balance | 27,299,925 | 58 MB | 3 列 |
+| previous_application | 1,670,214 | 114 MB | 37 列 |
+| POS_CASH_balance | 10,001,358 | 171 MB | 8 列 |
+| installments_payments | 13,605,401 | 502 MB | 8 列 (largest) |
+| credit_card_balance | 3,840,312 | 175 MB | 23 列 |
+
+### 多表聚合模块 (`src/features/aggregation.py`)
+
+`MultiTableAggregator` 类提供 5 个聚合器 + 1 个 `aggregate_all`:
+
+| 聚合器 | 输出特征数 (M5) | 核心字段 |
+|--------|---------------:|----------|
+| `aggregate_bureau` (+bureau_balance) | **52** | DAYS_CREDIT, AMT_CREDIT_SUM, _DPD_MONTH_FRAC (合并 balance 后) |
+| `aggregate_previous_app` | **68** | AMT_ANNUITY, AMT_CREDIT, NAME_CONTRACT_STATUS 4 种状态分数 |
+| `aggregate_pos_cash` | **24** | SK_DPD 分数, CNT_INSTALMENT |
+| `aggregate_installments` | **17** | _DAYS_LATE (ENTRY - INSTALMENT), _PAY_RATIO, late-day 分数 |
+| `aggregate_credit_card` | **85** | AMT_BALANCE/CREDIT_LIMIT utilization, SK_DPD |
+| **aggregate_all (outer join)** | **246** | 外连接 5 表, 0-fill missing |
+
+**关键设计选择**:
+- 仅 numeric 聚合（mean/max/min/sum/std）+ 少量 categorical 分数（"fraction of time in status X"）
+- 0-fill 缺失值（语义: 申请人没有 bureau 记录 → 0）
+- Bureau_balance 合并到 bureau 表后,计算每条 bureau 记录的 `_DPD_MONTH_FRAC`（"bad months" / "total months"）
+- Installments 表计算 `_DAYS_LATE = DAYS_ENTRY_PAYMENT - DAYS_INSTALMENT`（正=晚付）
+
+**测试**: `tests/test_aggregation.py` 13 个用例 (1.44s 全跑) — 覆盖 5 个聚合器 + `aggregate_all` outer join + `load_secondary_tables` 容错。
+
+### Pipeline 集成 (STEP 3.5)
+
+在 `run_pipeline.py` 的 STEP 3 (cleaning) 之后、STEP 4 (feature engineering) 之前插入 STEP 3.5:
+
+```
+STEP 3:  Data cleaning
+STEP 3.5: Multi-table aggregation  ← NEW, 65s
+STEP 4:  Feature engineering (30 + 245 = 275 features)
+```
+
+**关键调整**: 因果发现 (STEP 8) 改用 30 个 single-table 特征 (PC 算法在 260 列上会触发 singular correlation matrix 异常),multi-table 特征只用于预测 (LightGBM) 和 SHAP。
+
+### 性能对比 (M2 vs M5)
+
+| 指标 | M2 (单表) | M5 (8 表) | 提升 |
+|------|----------:|----------:|-----:|
+| 特征数 | 30 | **275** | +245 |
+| 3-fold CV AUC | 0.7503 | **0.7763** | **+0.026 (+3.4%)** |
+| 测试集 AUC | 0.7547 | **0.7803** | **+0.026 (+3.4%)** |
+| 测试集 F1 (default) | 0.0344 | **0.0770** | **+124%** |
+| Pipeline 总耗时 | 85s | 245s | +160s (主要在 Step 6 训练 + Step 3.5 聚合) |
+
+**Top 多表特征 (LightGBM gain)**:
+- `INST_LATE_DAYS_GT0_FRAC` — 历史还款晚付次数分数
+- `POS_CNT_INSTALMENT_FUTURE_MEAN` — 未结清分期数
+- `BUREAU_DAYS_CREDIT_MEAN` — 信用历史长度
+- `INST__DAYS_LATE_MEAN` — 平均晚付天数
+- `BUREAU_AMT_CREDIT_SUM_MEAN` — 历史授信额度
+
+> **结论**: 多表特征对 credit scoring 提升明显,主要原因: (a) **还款履约数据**（installments_payments）单表完全看不到;(b) **信用历史长度**（bureau）单表只有快照;(c) **跨机构多头借贷**（bureau 多条记录）单表无此维度。F1 翻倍说明这些特征对**正例 (default) 召回**帮助最大,符合行业经验。
+
+### 已知优化点 (未做)
+
+- **缓存 `secondary_features.parquet`**: 一次聚合, 永久复用,Step 3.5 从 65s 降到 < 1s
+- **polars 改写 bureau 聚合器**: 当前 pandas 单线程,~27s 可降到 ~5s
+- **Bureau + balance 双层聚合**: 现在是"bureau_balance 按 SK_ID_BUREAU 聚合"再 merge,可改成"bureau 按 SK_ID_CURR 聚合 + balance 按 SK_ID_CURR 聚合"分别贡献特征
+- **SHAP top-N 特征筛选**: 275 特征里 ~50 个 gain > 0 实际是 0,可通过 L1 预筛选把 LightGBM 训练再加速 30%
+
+---
+
 
 ---
 
@@ -203,11 +287,13 @@ tests/test_shap.py              # SHAP 模块集成 (M1 demo)
 
 ## 后续迭代方向（未做）
 
-- 8 表 JOIN（bureau / previous_application / POS / installments / credit_card）→ 多表因果特征
-- GPU 加速（LightGBM GPU build / XGBoost GPU）
+- ~~8 表 JOIN（bureau / previous_application / POS / installments / credit_card）→ 多表因果特征~~ ✅ M5 完成
+- GPU 加速（LightGBM GPU build / XGBoost GPU）→ pipeline 84s → ~5-10s
 - 实时推理服务（gRPC / ONNX Runtime）
 - K8s / Helm / Terraform 部署
 - 多语言决策建议扩展（粤语 / 繁体）
+- **多表聚合缓存化**（M5 已知优化点, 1 行代码改写 + 65s → < 1s）
+- **特征 L1 预筛选**（M5 已知优化点, 砍 ~30% 训练耗时）
 
 ---
 

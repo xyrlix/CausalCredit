@@ -1,0 +1,48 @@
+{
+  "applicant_id": "HC_006355",
+  "timestamp": "2026-06-06T03:56:56.679425Z",
+  "default_probability": 0.896,
+  "score": 318,
+  "risk_grade": "E",
+  "decision_suggestion": "DECLINE — high risk; recommend rejection or sub-prime product",
+  "top_risk_factors": [
+    {
+      "feature": "EXT_SOURCE_2",
+      "value": 0.0119977231302305,
+      "shap": 1.0353677595940143,
+      "quadrant": "TRUSTED"
+    },
+    {
+      "feature": "EXT_SOURCE_3",
+      "value": 0.2127563054543414,
+      "shap": 0.5645786984537239,
+      "quadrant": "TRUSTED"
+    },
+    {
+      "feature": "EXT_SOURCE_1",
+      "value": 0.0914548792675788,
+      "shap": 0.42804190584038254,
+      "quadrant": "TRUSTED"
+    },
+    {
+      "feature": "BUREAU_TYPE_MICROLOAN_FRAC",
+      "value": 0.7857142857142857,
+      "shap": 0.38841356361255874,
+      "quadrant": "TRUSTED"
+    },
+    {
+      "feature": "PREV_STATUS_REFUSED_FRAC",
+      "value": 0.5,
+      "shap": 0.245991790087624,
+      "quadrant": "TRUSTED"
+    }
+  ],
+  "cate_insights": [
+    "Heterogeneous treatment effect (CATE) for this applicant: 0.0000",
+    "Four-quadrant distribution: TRUSTED=89, UNTRUSTED=44, NEGLIGIBLE=88, MASKED=44",
+    "ATE estimate: 0.0000",
+    "Refutation robustness score: 0.75"
+  ],
+  "counterfactual_recommendations": [],
+  "causal_narrative": "Default risk is 89.60% (score=318, grade E). Primary driver: EXT_SOURCE_2 (SHAP=+1.0354, quadrant=TRUSTED). Heterogeneous effect estimate: |CATE|=0.0000."
+}

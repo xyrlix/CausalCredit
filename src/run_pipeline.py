@@ -176,6 +176,30 @@ def run() -> int:
     _t(t_step, "step_3_data_cleaning", step_times)
 
     # =========================================================================
+    # STEP 3.5 — MULTI-TABLE AGGREGATION (5 secondary tables -> ~245 features)
+    # =========================================================================
+    print_section("STEP 3.5: MULTI-TABLE AGGREGATION (bureau + prev + POS + installments + credit_card)")
+    t_step = time.time()
+    from src.features.aggregation import MultiTableAggregator, load_secondary_tables
+    secondary_raw = load_secondary_tables("data/home-credit-default-risk/_raw")
+    secondary_n_rows = {k: v.shape[0] for k, v in secondary_raw.items()}
+    print(f"  raw secondary tables (rows): {secondary_n_rows}")
+    agg = MultiTableAggregator()
+    secondary_features = agg.aggregate_all({
+        "bureau": (secondary_raw["bureau"], secondary_raw["bureau_balance"]),
+        "previous_application": secondary_raw["previous_application"],
+        "pos_cash": secondary_raw["POS_CASH_balance"],
+        "installments": secondary_raw["installments_payments"],
+        "credit_card": secondary_raw["credit_card_balance"],
+    })
+    print(f"  aggregated feature matrix: {secondary_features.shape}")
+    df = df.merge(secondary_features, left_on="SK_ID_CURR", right_index=True, how="left")
+    df = df.fillna(0)  # applicants with no bureau/prev records get 0
+    n_secondary_cols = secondary_features.shape[1]
+    print(f"  merged with application: {df.shape}  (+{n_secondary_cols} secondary features)")
+    _t(t_step, "step_3_5_multi_table_aggregation", step_times)
+
+    # =========================================================================
     # STEP 4 — FEATURE ENGINEERING (causal-guided subset + label encoding)
     # =========================================================================
     print_section("STEP 4: FEATURE ENGINEERING")
@@ -186,13 +210,21 @@ def run() -> int:
         "REGION_POPULATION_RELATIVE", "DAYS_REGISTRATION", "DAYS_ID_PUBLISH",
         "EXT_SOURCE_3", "EXT_SOURCE_1",
     ]
-    feature_cols = [c for c in dag_candidates if c in df.columns and c not in ("TARGET",)]
+    app_feature_cols = [c for c in dag_candidates if c in df.columns and c not in ("TARGET",)]
     # Cap at top-30 by missing-rate to keep the matrix tractable for LightGBM
-    miss_rate = df[feature_cols].isnull().mean().sort_values()
-    feature_cols = list(miss_rate.head(30).index)
-    print(f"  selected features ({len(feature_cols)}):")
-    for c in feature_cols:
-        print(f"    - {c}")
+    miss_rate = df[app_feature_cols].isnull().mean().sort_values()
+    app_feature_cols = list(miss_rate.head(30).index)
+    # Plus ALL secondary-table aggregate features (already 0-filled, so no NA)
+    secondary_feature_cols = [c for c in df.columns if any(
+        c.startswith(p) for p in ("BUREAU_", "PREV_", "POS_", "INST_", "CC_")
+    )]
+    feature_cols = app_feature_cols + secondary_feature_cols
+    print(f"  app-table features:  {len(app_feature_cols)} (capped at 30 by missingness)")
+    print(f"  secondary features:  {len(secondary_feature_cols)} (BUREAU/PREV/POS/INST/CC)")
+    print(f"  total selected features: {len(feature_cols)}")
+    if len(feature_cols) <= 50:
+        for c in feature_cols:
+            print(f"    - {c}")
 
     X_feat = df[feature_cols].copy()
     # Label-encode categoricals
@@ -351,7 +383,13 @@ def run() -> int:
     # =========================================================================
     print_section("STEP 8: CAUSAL DISCOVERY (PC + NOTEARS + Domain Knowledge)")
     t_step = time.time()
-    disc_sample = df[feature_cols].dropna().sample(n=5000, random_state=42)
+    # Causal discovery needs ~O(d^2) CI tests; with 275 features the PC fisher-z
+    # test trips a singular correlation matrix. Use only the 30 single-table
+    # features (where the DAG lives) for discovery — the secondary features
+    # are downstream of the same confounders and add no new causal information.
+    disc_features = app_feature_cols  # capped at 30 by missingness in STEP 4
+    disc_sample = df[disc_features].dropna().sample(n=5000, random_state=42)
+    print(f"  discovery uses {len(disc_features)} features (single-table subset)")
     pc_g = run_pc(disc_sample, alpha=0.05)
     nt_g = run_notears(disc_sample, lambda1=0.1, threshold=0.3)
     fused = fuse_graphs(pc_g, nt_g, edge_conf_threshold=0.5)

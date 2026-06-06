@@ -1,23 +1,23 @@
 {
   "model": {
-    "lgbm_cv_auc": 0.7503363489586677,
-    "lgbm_test_auc": 0.754675,
-    "lgbm_test_accuracy": 0.919667,
-    "lgbm_test_f1": 0.034397
+    "lgbm_cv_auc": 0.7762637131094506,
+    "lgbm_test_auc": 0.780302,
+    "lgbm_test_accuracy": 0.919906,
+    "lgbm_test_f1": 0.076952
   },
   "discovery": {
     "n_pc_edges": 37,
-    "n_notears_edges": 7,
-    "n_fused_edges": 39,
-    "n_fused_with_dk": 46,
+    "n_notears_edges": 6,
+    "n_fused_edges": 37,
+    "n_fused_with_dk": 43,
     "overlap_rate_domain": 1.0
   },
   "cate": {
-    "mean_abs_spearman": 0.5783950164999502,
+    "mean_abs_spearman": 0.5475487897594881,
     "ate_per_method": {
-      "LinearDML": 1.284104405913907e-05,
-      "SparseLinearDML": 1.2812837193369827e-05,
-      "CausalForestDML": 1.4191561421827308e-05
+      "LinearDML": 1.9949852429197367e-05,
+      "SparseLinearDML": 1.7425523081579075e-05,
+      "CausalForestDML": 2.048060387542321e-06
     }
   },
   "refutation": {
@@ -31,18 +31,18 @@
   },
   "decision_reports": [
     {
-      "applicant_id": "HC_067831",
-      "score": 847,
+      "applicant_id": "HC_023041",
+      "score": 848,
       "risk_grade": "A"
     },
     {
-      "applicant_id": "HC_053002",
-      "score": 806,
+      "applicant_id": "HC_019278",
+      "score": 810,
       "risk_grade": "A"
     },
     {
-      "applicant_id": "HC_040931",
-      "score": 375,
+      "applicant_id": "HC_006355",
+      "score": 318,
       "risk_grade": "E"
     }
   ]

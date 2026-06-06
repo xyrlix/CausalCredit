@@ -38,7 +38,7 @@ CausalCredit 是一套面向金融机构的**因果推理增强信用评分系�
 ### 一键运行
 
 ```bash
-# 1) 端到端 pipeline（M2，13 步，约 75 秒）
+# 1) 端到端 pipeline（M5，14 步，约 245 秒, CPU）
 /home/tony/anaconda3/envs/ldq_cc/bin/python -m src.run_pipeline
 
 # 2) FastAPI 后端（M3）
@@ -47,7 +47,7 @@ CausalCredit 是一套面向金融机构的**因果推理增强信用评分系�
 # 3) Streamlit 前端（M3）
 /home/tony/anaconda3/envs/ldq_cc/bin/streamlit run src/frontend/app.py
 
-# 4) 单元测试（M4，85 个用例，~1.3 秒）
+# 4) 单元测试（M5，98 个用例，~1.4 秒）
 /home/tony/anaconda3/envs/ldq_cc/bin/python -m pytest tests/ -v
 ```
 
@@ -75,8 +75,8 @@ CausalCredit/
 │   ├── api/                   # FastAPI 5 端点 + 业务服务层
 │   ├── frontend/              # Streamlit 4 页（dashboard / 因果图 / 反事实 / 决策）
 │   ├── monitoring/            # PSI 漂移检测（特征 / 预测 / 概念）
-│   └── run_pipeline.py        # 13 步端到端入口
-├── tests/                     # 14 个测试文件，85 用例
+│   └── run_pipeline.py        # 14 步端到端入口 (含 STEP 3.5 多表聚合)
+├── tests/                     # 15 个测试文件，98 用例
 ├── configs/                   # config.yaml
 ├── scripts/                   # run_api / run_demo / run_tests / setup_env
 ├── data/                      # Home Credit + German Credit
@@ -88,38 +88,42 @@ CausalCredit/
 └── docs/                      # 11 份原始分析文档
 ```
 
-## 13 步 Pipeline 概览
+## 14 步 Pipeline 概览 (M5 含 STEP 3.5 多表聚合)
 
 | # | 步骤 | 输出 |
 |---|------|------|
 | 1 | 加载 Home Credit (307,511 × 122) | DataFrame |
 | 2 | 数据校验（空值 / 类型 / 分布） | 校验报告 |
 | 3 | 清洗（缺失值 + Winsorize） | 清洗 DataFrame |
-| 4 | 特征工程（5 个因果特征） | 增广特征 |
+| **3.5** | **多表聚合** (bureau + prev + POS + installments + credit_card → 245 特征) | 合并 DataFrame (367 列) |
+| 4 | 特征工程（causal-guided subset + label encoding） | 275 列增广特征 |
 | 5 | 划分 train/val/test | 索引 + 标签 |
-| 6 | 训练 GBT + LightGBM（5-fold CV） | 评估指标 |
+| 6 | 训练 GBT + LightGBM（3-fold CV） | 评估指标 |
 | 7 | 评估 + Isotonic 校准 | AUC + 校准曲线 |
-| 8 | **因果发现**（PC + NOTEARS + 融合） | DAG + 6 类图 |
+| 8 | **因果发现**（PC + NOTEARS + 融合, 30 features） | DAG + 6 类图 |
 | 9 | ATE 估计（DoWhy + PSM） | ATE + 95% CI |
 | 10 | **CATE**（DML + DR + Causal Forest） | 个体效应 + 子群分析 |
 | 11 | **反驳验证**（4 类 refuter + E-value） | 通过/失败 + 鲁棒性分 |
 | 12 | **SHAP 四象限** | 全局 / 局部 / 一致性 |
 | 13 | **反事实 + 决策报告** | 3 份 JSON + 11 张图 |
 
-## 当前实测结果（Home Credit, 30 万行）
+## 当前实测结果（Home Credit, 30 万行 + 5 张二级表）
 
 > 详细 per-step 耗时、ATE/CATE/Refutation 数值、决策报告样例见 [`BENCHMARKS.md`](BENCHMARKS.md)
 
-| 指标 | 数值 |
-|------|------|
-| 测试集 AUC-ROC | 0.7547 |
-| ATE（`AMT_CREDIT` → `TARGET`, DoWhy backdoor） | +0.0092 (high vs low credit) |
-| CATE 一致性（3 方法 mean Spearman） | 0.578 |
-| 反驳验证 | 4 类中 3 类通过（E-value = 1.96） |
-| 决策报告多样性 | 3 份样本覆盖 P = 0.31% / 5.35% / 73.50% |
-| 输出图表 | 11 张 PNG + 9 张 M1 demo 图 |
-| 单元测试 | 85 用例 / 1.34s |
-| Pipeline 端到端耗时 | **84.8 秒**（CPU, 13 步, per-step 详见 BENCHMARKS） |
+| 指标 | 数值 (M2 单表) | 数值 (M5 8 表) | 提升 |
+|------|---------------:|---------------:|-----:|
+| 特征数 | 30 | **275** | +245 |
+| 3-fold CV AUC | 0.7503 | **0.7763** | +0.026 |
+| 测试集 AUC-ROC | 0.7547 | **0.7803** | +0.026 |
+| 测试集 F1 (default) | 0.0344 | **0.0770** | +124% |
+| ATE（`AMT_CREDIT` → `TARGET`, DoWhy） | +0.0092 | +0.0092 | — |
+| CATE 一致性（3 方法 mean Spearman） | 0.578 | 0.548 | — |
+| 反驳验证 | 4 中 3 通过 (E=1.96) | 4 中 3 通过 (E=1.96) | — |
+| 决策报告多样性 | P = 0.31% / 5.35% / 73.50% | P = 0.31% / 5.34% / 73.5% | — |
+| 输出图表 | 11 PNG | 11 PNG | — |
+| 单元测试 | 85 / 1.34s | **98 / 1.44s** | +13 |
+| Pipeline 端到端耗时 | 84.8s | 244.9s | +160s (Step 3.5 + Step 6 训练) |
 
 ## 数据集
 

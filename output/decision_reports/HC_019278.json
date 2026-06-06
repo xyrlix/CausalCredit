@@ -1,0 +1,48 @@
+{
+  "applicant_id": "HC_019278",
+  "timestamp": "2026-06-06T03:56:56.559651Z",
+  "default_probability": 0.0491,
+  "score": 810,
+  "risk_grade": "A",
+  "decision_suggestion": "APPROVE — low expected loss",
+  "top_risk_factors": [
+    {
+      "feature": "DAYS_BIRTH",
+      "value": -20871.0,
+      "shap": -0.26765007763770104,
+      "quadrant": "TRUSTED"
+    },
+    {
+      "feature": "EXT_SOURCE_3",
+      "value": 0.3825018041447388,
+      "shap": 0.23993785957137467,
+      "quadrant": "TRUSTED"
+    },
+    {
+      "feature": "AMT_CREDIT",
+      "value": 135000.0,
+      "shap": -0.2294825639142729,
+      "quadrant": "UNTRUSTED"
+    },
+    {
+      "feature": "AMT_ANNUITY",
+      "value": 6750.0,
+      "shap": -0.1651761377131419,
+      "quadrant": "TRUSTED"
+    },
+    {
+      "feature": "CODE_GENDER",
+      "value": 1.0,
+      "shap": -0.1294846387694306,
+      "quadrant": "UNTRUSTED"
+    }
+  ],
+  "cate_insights": [
+    "Heterogeneous treatment effect (CATE) for this applicant: 0.0000",
+    "Four-quadrant distribution: TRUSTED=89, UNTRUSTED=44, NEGLIGIBLE=88, MASKED=44",
+    "ATE estimate: 0.0000",
+    "Refutation robustness score: 0.75"
+  ],
+  "counterfactual_recommendations": [],
+  "causal_narrative": "Default risk is 4.91% (score=810, grade A). Primary driver: DAYS_BIRTH (SHAP=-0.2677, quadrant=TRUSTED). Heterogeneous effect estimate: |CATE|=0.0000."
+}
