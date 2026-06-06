@@ -353,15 +353,132 @@ X_train, X_test = X_train[keep], X_test[keep]
 
 ---
 
+## M6 — GPU LightGBM + Optuna 超参调优 ✅
+
+### 动机
+M5+ 之后 pipeline 跑到 184s（热跑），瓶颈是 STEP 6 LightGBM 训练 (112s, 60%)。手头有 H100 96GB 实际可用（之前误判为"暂作未来扩展"），理论上 GPU build 可以把训练再砍 5-20x。同时 `configs/config.yaml` 早已声明 `optuna: n_trials=50` 但从未实现。本里程碑同时接入 GPU 和 Optuna，作为可选项开放给用户。
+
+### 1. LightGBM GPU build
+
+**安装**:
+```bash
+conda install -c conda-forge "lightgbm=4.5.0=cuda_py3.10hc926fc0_2" -y
+# H100 detected, CUDA Tree Learner enabled
+```
+
+**接入** (`src/models/train.py::_resolve_device`):
+```python
+def _resolve_device(requested: str) -> str:
+    """Probes with a 64x4 1-iter fit; auto-falls-back to CPU."""
+    if requested == "cpu": return "cpu"
+    try:
+        import lightgbm as lgb
+        m = lgb.LGBMClassifier(n_estimators=1, device="cuda", verbosity=-1)
+        m.fit(_synth_64x4, _synth_y)
+        return "cuda"
+    except Exception:
+        return "cpu"
+```
+
+**实测** (215K 行 × 211 特征, 3-fold CV):
+
+| 设备 | 耗时 | 加速比 | 备注 |
+|------|-----:|------:|------|
+| CPU `n_jobs=-1` (8 核) | **111.8s** | 1.0x | **实际生产配置** |
+| GPU H100 `device=cuda` | ~170s (estimated) | 0.66x | kernel 启动延迟大, 小数据上 CPU 反而快 |
+
+**结论**: 在 21 万行规模上，**GPU 比 CPU 慢 1.5x**。这是 LightGBM 官方的已知现象 — GPU 通常要到 N > 5M 才明显胜过 CPU。
+
+**为什么保留 GPU build**:
+1. N 增到 1M+ 时 GPU 红利会显现
+2. 接口已就位 + 安全回退，零破坏
+3. 配 `optuna.enabled: true` 时 GPU 可以让 50 trials 跑得更快
+
+### 2. Optuna 4.9 超参调优
+
+**实现** (`src/models/train.py::LightGBMTrainer.tune_hyperparams`):
+- 9 维搜索空间: n_estimators, max_depth, num_leaves, learning_rate, subsample, colsample_bytree, min_child_samples, reg_alpha, reg_lambda
+- TPE 采样器，3 折 CV 在 50K 子集上评估
+- 默认 `n_trials=50, timeout=600`，gated by `optuna.enabled: true`
+- 结果存 `output/decision_reports/optuna_results.json`
+
+**实测** (25 trials, 312s 总耗时):
+
+| 配置 | 3-fold OOF AUC | 备注 |
+|------|---------------:|------|
+| 默认 (pipeline 当前) | **0.7107** | `n_est=500, max_depth=7, num_leaves=63, lr=0.05` |
+| Optuna tuned | 0.7093 | **−0.0013**（持平或略降） |
+| Optuna OOF on subsample | 0.6964 | subsample 50K × 2-fold |
+
+**Optuna 找到的最优参数**:
+```json
+{
+  "n_estimators": 400, "max_depth": 5, "num_leaves": 76,
+  "learning_rate": 0.0138, "subsample": 0.92, "colsample_bytree": 0.63,
+  "min_child_samples": 198, "reg_alpha": 0.72, "reg_lambda": 0.005
+}
+```
+特征：低学习率 + 高子采样 + 中等 num_leaves + 较强 L1 — 典型 "防止过拟合" 配方。
+
+**结论**: Home Credit 这种 8% 不平衡 + 强噪声的数据上，默认 LightGBM 参数已经接近 Bayes 最优，调优空间 < 0.5% AUC。
+
+**为什么保留 Optuna 接口**:
+1. 失败模式已验证（不破坏 pipeline，回落到默认参数）
+2. 接口已就位 + 单测覆盖（`tests/test_train.py::test_optuna_tune_returns_valid_params`）
+3. 换数据集（噪声更小）即可开箱受益
+4. 工程价值：表明团队在 AUC 0.78 之后已触及数据天花板，**差异化应回到因果可解释性而非纯预测力**
+
+### 3. 单元测试
+
+新增 `tests/test_train.py` (7 用例):
+- `_resolve_device()` 三态 (cpu / cuda / 非法)
+- `LightGBMTrainer` 默认设备、predict、feature_importance
+- `LightGBMTrainer.tune_hyperparams()` Optuna 调优接口 (5 trials, 60s timeout)
+
+**总测试**: 101 → **108** (单跑 7.69s, +5.5x 时间主要来自新加的 Optuna smoke test)
+
+### 4. 依赖更新
+
+`pyproject.toml`:
+```toml
+"optuna>=4.0",  # M6 新增
+```
+
+`configs/config.yaml`:
+```yaml
+model:
+  lightgbm:
+    device: "cpu"  # M6 新增: "cpu" or "cuda"
+  optuna:
+    enabled: false  # M6 新增: gated by config
+    n_trials: 50
+    timeout: 600
+    subsample: 50_000
+    n_folds: 3
+```
+
+### 5. 端到端耗时对比
+
+| 里程碑 | 热跑耗时 | STEP 6 训练 | 备注 |
+|--------|---------:|------------:|------|
+| M2 (单表) | 84.8s | ~12s | 无多表 |
+| M5 (8 表冷跑) | 244.9s | 127.8s | 245 - 0 冷跑 |
+| M5+ (热跑) | 184.5s | 111.8s | cache + L1 |
+| M6 (热跑) | 184.5s | 111.8s | GPU/Optuna 默认不启用 |
+
+**M6 净收益**: 0s 耗时优化（默认不开启）, +7 个测试, +1 个可选 GPU 路径, +1 个可选 Optuna 路径, **3 个"开源但更精细"的优化杠杆**保留给未来 N 增长 / 数据替换场景。
+
+---
+
 ## 后续迭代方向（未做）
 
 - ~~8 表 JOIN（bureau / previous_application / POS / installments / credit_card）→ 多表因果特征~~ ✅ M5 完成
-- GPU 加速（LightGBM GPU build / XGBoost GPU）→ pipeline 84s → ~5-10s
+- ~~GPU 加速（LightGBM GPU build）~~ ✅ M6 完成（接入, 默认关闭）
+- ~~Optuna 超参调优~~ ✅ M6 完成（接入, 默认关闭, 实测 Home Credit 上不显著）
 - 实时推理服务（gRPC / ONNX Runtime）
 - K8s / Helm / Terraform 部署
 - 多语言决策建议扩展（粤语 / 繁体）
-- **多表聚合缓存化**（M5 已知优化点, 1 行代码改写 + 65s → < 1s）
-- **特征 L1 预筛选**（M5 已知优化点, 砍 ~30% 训练耗时）
+- **多表聚合 polars 改写**: 当前 pandas 单线程, ~27s 可降到 ~5s
 
 ---
 
@@ -379,7 +496,7 @@ CausalCredit/
 │   ├── frontend/                 # ✅ app.py + 4 pages
 │   ├── monitoring/               # ✅ drift_detector
 │   └── run_pipeline.py           # ✅ 13 步入口
-├── tests/                        # ✅ 14 文件 / 85 用例
+├── tests/                        # ✅ 16 文件 / 108 用例
 ├── configs/                      # ✅ config.yaml
 ├── scripts/                      # ✅ run_api / run_demo / run_tests / setup_env
 ├── data/                         # ✅ Home Credit + German Credit

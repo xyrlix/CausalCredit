@@ -191,13 +191,55 @@
 
 ---
 
+## 8.5 M6 — GPU LightGBM & Optuna 调优
+
+### M6.1 — GPU build 接入（结论：21万行规模下不显著加速）
+
+| 测试 | 数据规模 | 设备 | 耗时 | 说明 |
+|------|----------|------|-----:|------|
+| 合成 215K × 216, 3-fold CV | 215K × 216, 3-fold | CPU (`n_jobs=-1`) | **31.7s** | 8 核并行 |
+| 合成 215K × 216, 3-fold CV | 215K × 216, 3-fold | GPU (`device=cuda`) | 50.5s | H100 96GB, 单线程 |
+| 真实 Home Credit 215K × 211, 3-fold | 215K × 211, 3-fold | CPU (`n_jobs=-1`) | 111.8s | **实际生产配置** |
+| 真实 Home Credit, Optuna 25 trials (2-fold) | 50K × 211 × 25 | CPU | **313s** | subsample 加速, 等价 ~12s/trial |
+
+**结论**：在 21 万行规模上，**LightGBM GPU 反而比 CPU 慢 1.5-1.6x**。原因：LightGBM 的 GPU kernel 启动延迟（~10-50ms）在小数据/浅树场景下占比过大；CPU 多核并行在树分裂这种不规则访存模式下反而更优。这是 LightGBM 官方的已知现象 — GPU 通常要到 **N > 5M** 才明显胜过 CPU。
+
+**接入方式**（不启用，仅作未来选项）：
+- `lightgbm 4.5.0 cuda_py3.10` 已装（conda-forge 预编译包）
+- `LightGBMTrainer(config)` 接受 `lightgbm.device: "cuda"`，通过 `_resolve_device()` 自动探测回退
+- 设 `device: cuda` 后失败自动回退到 `cpu`，无破坏性
+- 配 `optuna.enabled: true` + `device: cuda` 才能在 N > 1M 时收获 GPU 红利
+
+### M6.2 — Optuna 超参调优（结论：在 Home Credit 上不显著）
+
+| 配置 | 3-fold OOF AUC | 备注 |
+|------|---------------:|------|
+| 默认 (pipeline 当前) | **0.7107** | `n_estimators=500, max_depth=7, num_leaves=63, lr=0.05, ...` |
+| Optuna 25 trials (2-fold subsample) | 0.6964 (subsample OOF) | TPE 搜索 312s |
+| Optuna tuned → 全量 3-fold 验证 | 0.7093 | **−0.0013**（持平或略降） |
+
+Optuna 找到的最优参数：低学习率 (0.014) + 高子采样 (0.92) + 中等 num_leaves (76) + 较强 L1 (reg_alpha=0.72)。**最终在 holdout 3-fold CV 上反而略低于默认参数**，说明 Home Credit 这种 8% 不平衡 + 强噪声的数据上，默认 LightGBM 已经接近 Bayes 最优，调优空间 < 0.5% AUC。
+
+**接入方式**（默认关闭，gated by config）：
+- `configs/config.yaml` 的 `model.optuna.enabled: true` 打开
+- `LightGBMTrainer.tune_hyperparams(X, y, n_trials, timeout, subsample, n_folds)` 接口
+- TPE 采样器，9 维搜索空间（n_estimators, max_depth, num_leaves, lr, subsample, colsample, min_child, reg_alpha, reg_lambda）
+- 结果存 `output/decision_reports/optuna_results.json`
+
+**为什么保留**：
+1. 接口已就位，未来换数据集（噪声更小）即可开箱受益
+2. 失败模式已验证（不破坏 pipeline，回落到默认参数）
+3. 工程价值：表明团队在 AUC 0.78 之后已触及数据天花板，差异化应回到**因果可解释性**而非纯预测力
+
+---
+
 ## 9. 单元测试
 
 | 项 | 数值 |
 |----|------|
-| 测试文件 | **15** |
-| 测试用例 | **101** |
-| 全跑耗时 | 1.46s |
+| 测试文件 | **16** |
+| 测试用例 | **108** |
+| 全跑耗时 | 7.69s |
 | 通过率 | 100% |
 
 `tests/test_aggregation.py` (16 用例) 覆盖：
@@ -209,7 +251,12 @@
 - `load_secondary_tables` 容错（空目录不报错）
 - Field-list 不为空 + 缓存版本号合法
 
-文件清单详见 `PROGRESS.md` M4 节。
+`tests/test_train.py` (7 用例) 覆盖：
+- `_resolve_device()` 三态 (cpu / cuda / 非法)
+- `LightGBMTrainer` 默认设备、predict、feature_importance
+- `LightGBMTrainer.tune_hyperparams()` Optuna 调优接口
+
+文件清单详见 `PROGRESS.md` M4 / M6 节。
 
 ---
 

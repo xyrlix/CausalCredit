@@ -30,6 +30,7 @@ model:
   lightgbm:
     objective: "binary"
     metric: "auc"
+    device: "cpu"  # "cpu" or "cuda" (auto-fallback if CUDA build unavailable)
     num_leaves: 63
     max_depth: 7
     learning_rate: 0.05
@@ -42,8 +43,11 @@ model:
     early_stopping_rounds: 50
     random_state: 42
   optuna:
+    enabled: false  # M6: gated by config; set true to run hyperparameter search
     n_trials: 50
-    timeout: 3600
+    timeout: 600  # 10 min cap (was 3600)
+    subsample: 50_000  # search on a stratified subsample
+    n_folds: 3
 
 api:
   host: "0.0.0.0"

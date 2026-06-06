@@ -74,11 +74,16 @@ class GBTrainer:
 
 
 class LightGBMTrainer:
-    """LightGBM classifier trainer — faster on big N, used downstream of GBT."""
+    """LightGBM classifier trainer — faster on big N, used downstream of GBT.
+
+    Supports CUDA build: pass ``device="cuda"`` in config to attempt GPU training.
+    Auto-falls-back to CPU if the lightgbm install was compiled without CUDA.
+    """
 
     def __init__(self, config: Optional[Dict] = None):
         cfg = config or {}
         lgbm_cfg = cfg.get("lightgbm", {})
+        self.device = _resolve_device(lgbm_cfg.get("device", "cpu"))
         self.params = {
             "n_estimators": lgbm_cfg.get("n_estimators", 300),
             "max_depth": lgbm_cfg.get("max_depth", 7),
@@ -90,9 +95,13 @@ class LightGBMTrainer:
             "n_jobs": lgbm_cfg.get("n_jobs", -1),
             "verbosity": -1,
         }
+        if self.device != "cpu":
+            self.params["device"] = self.device
         self.model = None
         self.feature_importances_: Optional[np.ndarray] = None
         self.feature_names_: Optional[List[str]] = None
+        self.best_params_: Optional[Dict] = None
+        self.study_: Optional["optuna.Study"] = None
 
     def train_cv(self, X: pd.DataFrame, y: pd.Series, n_folds: int = 5) -> Dict[str, float]:
         import lightgbm as lgb
@@ -133,3 +142,87 @@ class LightGBMTrainer:
             "feature": self.feature_names_,
             "importance": self.feature_importances_,
         }).sort_values("importance", ascending=False).reset_index(drop=True)
+
+    def tune_hyperparams(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        n_trials: int = 50,
+        timeout: int = 3600,
+        n_folds: int = 3,
+        subsample: int = 50_000,
+        seed: int = 42,
+    ) -> Dict:
+        """Optuna hyperparameter search on a stratified subsample.
+
+        Returns the best params dict (caller can merge into ``self.params``
+        and re-run ``train_final``). Stores the Optuna study in
+        ``self.study_`` for downstream inspection.
+        """
+        import optuna
+        from sklearn.model_selection import StratifiedKFold
+        from sklearn.metrics import roc_auc_score
+
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+        rng = np.random.default_rng(seed)
+        n = min(subsample, len(X))
+        sub_idx = rng.choice(len(X), size=n, replace=False)
+        X_sub = X.iloc[sub_idx].reset_index(drop=True)
+        y_sub = y.iloc[sub_idx].reset_index(drop=True) if hasattr(y, "iloc") else y[sub_idx]
+
+        base = {k: v for k, v in self.params.items() if k not in {"n_estimators"}}
+
+        def _objective(trial: "optuna.Trial") -> float:
+            params = {
+                **base,
+                "n_estimators": trial.suggest_int("n_estimators", 200, 800, step=100),
+                "max_depth": trial.suggest_int("max_depth", 4, 10),
+                "num_leaves": trial.suggest_int("num_leaves", 15, 127),
+                "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.1, log=True),
+                "subsample": trial.suggest_float("subsample", 0.6, 1.0),
+                "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
+                "min_child_samples": trial.suggest_int("min_child_samples", 20, 200),
+                "reg_alpha": trial.suggest_float("reg_alpha", 1e-3, 5.0, log=True),
+                "reg_lambda": trial.suggest_float("reg_lambda", 1e-3, 5.0, log=True),
+            }
+            import lightgbm as lgb
+            cv = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed)
+            aucs = []
+            for tr, va in cv.split(X_sub, y_sub):
+                m = lgb.LGBMClassifier(**params)
+                m.fit(X_sub.iloc[tr], y_sub.iloc[tr])
+                aucs.append(roc_auc_score(y_sub.iloc[va], m.predict_proba(X_sub.iloc[va])[:, 1]))
+            return float(np.mean(aucs))
+
+        sampler = optuna.samplers.TPESampler(seed=seed)
+        study = optuna.create_study(direction="maximize", sampler=sampler)
+        study.optimize(_objective, n_trials=n_trials, timeout=timeout, show_progress_bar=False)
+        self.study_ = study
+        self.best_params_ = study.best_params
+        return study.best_params
+
+
+def _resolve_device(requested: str) -> str:
+    """Return the device string for LightGBM, with safe fallback.
+
+    LightGBM 4.5+ conda package on cuda_py3.10 ships with ``-DUSE_CUDA=1``;
+    the CPU-only PyPI wheel does not. We probe by attempting a 1-iter fit
+    on a tiny synthetic array — fast (~0.1s) and never touches the user's
+    data, so the fallback is invisible to the caller.
+    """
+    requested = (requested or "cpu").lower()
+    if requested == "cpu":
+        return "cpu"
+    if requested not in ("cuda", "gpu"):
+        return "cpu"
+    try:
+        import lightgbm as lgb
+        import numpy as _np
+        rng = _np.random.default_rng(0)
+        X = rng.standard_normal((64, 4)).astype(_np.float32)
+        y = (X[:, 0] > 0).astype(int)
+        m = lgb.LGBMClassifier(n_estimators=1, device="cuda", verbosity=-1)
+        m.fit(X, y)
+        return "cuda"
+    except Exception:
+        return "cpu"
