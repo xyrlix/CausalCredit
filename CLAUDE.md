@@ -4,15 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-CausalCredit — a causal-inference enhanced credit scoring system built for the BOCHK 创新先驱大赛 2026. The system layers causal discovery, CATE (heterogeneous treatment effect) estimation, and counterfactual reasoning on top of a base ML scorer. End-to-end it answers not just "what is the default risk?" but "why is it high, and what would change it?"
+CausalCredit — a causal-inference enhanced credit scoring system built for the BOCHK 创新先驱大赛 2026. The system layers causal discovery, CATE (heterogeneous treatment effect) estimation, counterfactual reasoning, and a three-pillar anti-fraud stack on top of a base ML scorer. End-to-end it answers not just "what is the default risk?" but "why is it high, what would change it, and is it fraud?"
 
-The full Chinese-language design rationale is in `docs/` (see `CausalCredit_完整实现计划书.md`, `CausalCredit_因果推理验证标准体系.md`, `CausalCredit_反欺诈能力覆盖分析.md`). The current state of play, including what is implemented vs. skeleton, is in `PROGRESS.md` — read that first before assuming any module works.
+The full Chinese-language design rationale is in `docs/` (see `CausalCredit_完整实现计划书.md`, `CausalCredit_因果推理验证标准体系.md`, `CausalCredit_反欺诈能力覆盖分析.md`). The current state of play, including what is implemented vs. skeleton, is in `PROGRESS.md` — read that first before assuming any module works. Per-step benchmarks and routing distributions are in `BENCHMARKS.md`.
 
 ## Common commands
 
 All build / lint / test / run entry points are in the `Makefile`:
 
-- `make install` — `pip install -e ".[dev]"` (full dep set including DoWhy, EconML, LightGBM, SHAP, DiCE, FastAPI, Streamlit)
+- `make install` — `pip install -e ".[dev]"` (full dep set: DoWhy, EconML, LightGBM, SHAP, DiCE, FastAPI, Streamlit, Optuna, shap, econml, dowhy, dice_ml, causal-learn)
 - `make test` — `pytest tests/ -v --cov=src --cov-report=term-missing`
 - `make lint` / `make format` — ruff (line-length 100, py311), black, isort
 - `make run-api` — FastAPI on `0.0.0.0:8000`
@@ -20,69 +20,74 @@ All build / lint / test / run entry points are in the `Makefile`:
 - `make clean` — caches only (does NOT touch `output/` or trained models)
 - `docker-compose up --build` — API `:8000` + frontend `:8501`
 
-The end-to-end pipeline (the only fully working entry point right now):
+The end-to-end pipeline (14 steps, fully working):
 
 ```bash
-python -m src.run_pipeline    # ~33s on CPU, 12 steps, German Credit (1000 rows)
+python -m src.run_pipeline    # ~195s on CPU, 14 steps, Home Credit 307K rows
 ```
 
-Five PNGs land in `output/figures/`: ROC, feature importance, ATE forest plot, calibration curve, confusion matrix.
+**14 PNGs** land in `output/figures/` (11 from M0–M6 + 3 from M7 anti-fraud: `12_fraud_score_routing.png`, `13_packaging_scatter.png`, `14_denoising_effect.png`).
 
 ## Architecture
 
-The pipeline is a strictly linear assembly — `run_pipeline.py` calls one module per stage and nothing is wired up implicitly:
+The pipeline is a strictly linear 14-step assembly — `run_pipeline.py` calls one module per stage and nothing is wired up implicitly:
 
 ```
-GermanCreditLoader        src/data/loader.py            sklearn fetch_openml("credit-g")
-    └─> DataCleaner       src/data/preprocessing/       median impute + 1%/99% Winsorize
-    └─> FeatureBuilder    src/features/builder.py       LabelEncoder + StandardScaler
-        └─> CausalFeatureBuilder src/features/causal_features.py   5 hand-built ratio features
-    └─> GBTrainer         src/models/train.py           sklearn GradientBoosting + 5-fold CV
-    └─> ModelEvaluator    src/models/evaluate.py        AUC/Acc/Precision/Recall/F1/LogLoss
-    └─> CreditCausalGraph src/causal/graph.py           hard-coded DAG (see below)
-    └─> CausalVariableValidator src/causal/variable_validation.py
-    └─> CausalEffectEstimator src/causal/estimate.py    manual PSM + NearestNeighbors + 200 bootstrap CI
+HomeCreditLoader          src/data/home_credit_loader.py     307,511 × 122 CSV
+    └─> DataValidator     src/data/validator.py              schema/range checks
+    └─> DataCleaner       src/data/preprocessing/            median impute + 1%/99% Winsorize
+    └─> MultiTableAggregator  src/data/aggregator.py         5 secondary tables → 246 features
+    └─> FeatureBuilder    src/features/builder.py            LabelEncoder + select
+        └─> CausalFeatureBuilder src/features/causal_features.py    5 hand-built ratio features
+    └─> LGBMFeaturePruning  src/run_pipeline.py STEP 5.5    drop zero-gain features
+    └─> LightGBMTrainer   src/models/train.py               500 trees + 3-fold CV + GPU/Optuna opt-in
+    └─> ModelEvaluator    src/models/evaluate.py             AUC/Acc/F1 + IsotonicCalibrator
+    └─> CausalDiscovery   src/causal/discovery.py            PC + NOTEARS + domain-knowledge fusion
+    └─> DoWhy ATE         src/causal/estimate.py             CausalModel + 4 refuters + E-value
+    └─> CATE Estimator    src/causal/cate.py                 LinearDML + SparseLinearDML + CausalForestDML
+    └─> SHAPExplainer     src/explain/shap_explain.py        TreeSHAP + 4-quadrant labels
+    └─> CounterfactualReasoner src/explain/counterfactual.py DiCE NSGA-II + immutable/semi-mutable masks
+    └─> FraudGuard        src/fraud/pipeline.py              3-class sub-classifier + packaging + denoising
 ```
 
 ### Causal DAG (the most important domain object)
 
-`src/causal/graph.py` defines `CreditCausalGraph` — a hand-coded DAG used for the entire causal analysis:
+Two domain DAGs coexist:
 
-- **Treatments** (2): `credit_amount`, `duration`
-- **Outcome** (1): `class` (renamed to `default` in some places)
-- **Confounders** (8): `age`, `job`, `housing`, `savings_status`, `checking_status`, `employment`, `credit_history`, `purpose`
-- **Mediator** (1): `installment_commitment`
+- `src/causal/graph.py::CreditCausalGraph` — German Credit, 2 treatments (`credit_amount`, `duration`), 1 outcome (`class`), 8 confounders, 1 mediator.
+- `src/causal/home_credit_graph.py::HomeCreditCausalGraph` — Home Credit, 3 treatments (`AMT_CREDIT`, `AMT_ANNUITY`, `DAYS_EMPLOYED`), 1 outcome (`TARGET`), 8 confounders, 2 mediators, 1 sensitive attribute (`CODE_GENDER`).
 
-The graph exposes `get_treatment_variables`, `get_outcome_variable`, `get_confounders(tx, out)`, `get_mediators(tx, out)`, `get_instruments(tx)`, `validate_acyclic()` (DFS), and `get_dot_string()` for Graphviz export. Acyclicity must hold — if you add a node/edge, re-run `validate_acyclic()`. Confounders are computed as nodes that are ancestors of *both* treatment and outcome, so adding a new backdoor path silently changes which variables the PSM uses for adjustment.
+Both expose `get_treatment_variables`, `get_outcome_variable`, `get_confounders(tx, out)`, `get_mediators(tx, out)`, `get_instruments(tx)`, `validate_acyclic()` (DFS), and `get_dot_string()`. **Acyclicity must hold** — if you add a node/edge, re-run `validate_acyclic()`. Confounders are computed as nodes that are ancestors of *both* treatment and outcome, so adding a new backdoor path silently changes which variables the downstream causal modules (PSM, DML, refuters) use for adjustment.
 
-### ATE estimation (currently the only causal method actually implemented)
+### ATE / CATE / Refutation (all working end-to-end)
 
-`src/causal/estimate.py` implements ATE with **no DoWhy/EconML dependency** — pure sklearn + numpy. The flow:
+- `src/causal/estimate.py` — ATE via DoWhy `CausalModel.estimate_effect()` + 4 refuters (`placebo_treatment`, `random_common_cause`, `data_subset`, `e_value`) + manual PSM as fallback.
+- `src/causal/cate.py` — `CATEEstimator` wraps 3 EconML methods: `LinearDML`, `SparseLinearDML`, `CausalForestDML`. Cross-method agreement (mean |Spearman|) is reported as `mean_abs_spearman` in the pipeline summary.
+- `src/causal/refute.py` — `CausalRefuter` exposes the 4 refuter methods + `compute_e_value` + `compute_robustness_score`.
 
-1. `binarize_treatment` — median split on continuous treatments
-2. `estimate_propensity_scores` — `LogisticRegression(max_iter=5000)`
-3. `propensity_score_matching` — `NearestNeighbors` with optional caliper (0.25 std default)
-4. `compute_ate_with_bootstrap` — 200 resamples, percentile CI
+### Anti-Fraud Three-Pack (M7, STEP 14)
 
-Use `CausalEffectEstimator.estimate_ate(...)` or `estimate_all_treatments(...)`. The pipeline calls it twice: for `credit_amount -> default` and `duration -> default`. With German Credit (n=1000), `duration -> default` ATE is +0.149 [0.058, 0.204] p<0.05; `credit_amount` is not significant.
+`src/fraud/` contains 4 modules wired into `FraudGuard` (`src/fraud/pipeline.py`):
+
+1. **`three_class.py::ThreeClassFraudClassifier`** — 4-class LightGBM (non_default + fraudulent / non_malicious / systemic). Pseudo-labels are constructed from business rules since no fraud ground-truth exists: `fraudulent` triggered by `INST__DPD_MAX >= 30` OR (high income z + low employment z) OR (low EXT_SOURCE_1 + high income z); `systemic` triggered by `ORGANIZATION_TYPE` matching decline-industry substrings.
+2. **`packaging.py::PackagingDetector`** — `packaging_score = UNTRUSTED / (TRUSTED + UNTRUSTED)` over the applicant's top-25% |SHAP| features. Path integrity checks 3 domain-DAG chains (income→goods→credit→annuity, income→ext_score, age→employment→income). Per-applicant SHAP values are required for a non-uniform score; falls back to global quadrant labels if not provided.
+3. **`denoising.py::CausalDenoisingScorer`** — `causal_consistency = sign(repayment_z) × sign(consumption_z)` mapped to [0, 1] (5 INST__ cols vs 4 CC_/POS_ cols). `inflation = clip((1-consistency) × 0.15 × 5, 0, 0.15)`. `denoised_P(default) = P(default) + inflation`.
+4. **`pipeline.py::FraudGuard`** — orchestrator with 5-level routing (`REJECT_FRAUD` ≥ 0.10 / `REJECT_PACKAGING` ≥ 0.50 / `REVIEW_DENOISED` / `REVIEW_BORDERLINE` ≥ 0.30 / `PROCEED`). Wired into the pipeline at STEP 14; the 3 picked applicants get a `fraud` field injected into their decision JSON, and a 1K test subsample is batch-scored for charts.
 
 ### What is still a skeleton
 
-Per `PROGRESS.md` (the source of truth for status), these are placeholders that compile but do not work end-to-end — do not wire them into a path the user actually invokes without first completing the P0/P1 work listed there:
+Per `PROGRESS.md` (the source of truth for status), these are placeholders that compile but do not work end-to-end — do not wire them into a path the user actually invokes:
 
-- `src/causal/cate.py`, `src/causal/refute.py` — EconML CATE + DoWhy refutation methods (TODO bodies)
-- `src/explain/*.py` — SHAP / DiCE counterfactual / decision / evidence (all stubs)
-- `src/api/services.py` + `src/api/routes.py` — route handlers are `...`; only `/api/v1/health` returns
-- `src/frontend/app.py` + `src/frontend/pages/*` — Streamlit navigation renders but pages show `st.info` placeholders
-- `src/models/calibrate.py` — Isotonic calibration stub
-- `src/features/aggregation.py`, `src/features/pipelines/temporal_features.py` — Home Credit multi-table aggregation not yet implemented
-- `src/monitoring/drift_detector.py` — PSI drift detection stub
+- `src/api/services.py` + `src/api/routes.py` — route handlers are `...`; only `/api/v1/health` returns. **Stub since M3, deprioritized per user instruction (no K8s/ArgoCD/Celery/Redis).**
+- `src/frontend/app.py` + `src/frontend/pages/*` — Streamlit navigation renders but pages show `st.info` placeholders. **Same status.**
+- `src/models/calibrate.py` — Isotonic calibration stub (a minimal working version is inlined in `run_pipeline.py` STEP 7).
+- `src/monitoring/drift_detector.py` — PSI drift detection stub (returns a 3-level flag but doesn't read from a stream).
 
-The codebase currently uses `GradientBoostingClassifier` (sklearn) for the working pipeline. `pyproject.toml` lists `lightgbm>=4.0` and `dowhy>=0.11` etc. for the planned GPU environment, but switching `GBTrainer` to LightGBM and `CausalEffectEstimator` to EconML/DoWhy is tracked as a P0 task in `PROGRESS.md` — not done.
+Everything else listed in `docs/CausalCredit_完整实现计划书.md` §4.1–4.6 is implemented: discovery, CATE, refutation, counterfactual, SHAP four-quadrant, decision reports, **and now the anti-fraud three-pack**.
 
 ## Configuration and data
 
-- `configs/config.yaml` is loaded by `src/utils/config.py::load_config()` (no env var injection; defaults to repo path). The YAML defines data dirs, LightGBM params (for the future switch), Optuna trials, API host/port, frontend URL. Note the config has LightGBM hyperparameters but the actual trainer ignores them — see "skeleton" note above.
+- `configs/config.yaml` is loaded by `src/utils/config.py::load_config()` (no env var injection; defaults to repo path). The YAML defines data dirs, LightGBM params (used by `LightGBMTrainer`), Optuna trials (gated by `optuna.enabled: false` by default), `device: "cpu"` (set to `cuda` to enable GPU build), API host/port, frontend URL.
 - `.env.example` lists `HOME_CREDIT_DATA_DIR`, `LENDING_CLUB_DATA_DIR`, `KAGGLE_USERNAME/KEY` etc. for the Home Credit / Lending Club datasets; the working pipeline does NOT need them.
 - `tests/fixtures/` is currently empty (only `__init__.py`). `tests/conftest.py` provides a `sample_config` dict fixture. When writing tests, add fixture data here.
 
@@ -92,7 +97,26 @@ The codebase currently uses `GradientBoostingClassifier` (sklearn) for the worki
 - `.pre-commit-config.yaml` runs ruff (with `--fix`) and basic whitespace/YAML/TOML checks.
 - `src/run_pipeline.py` uses `matplotlib.use("Agg")` first thing — do not reorder imports or plots will fail in headless environments.
 - Chinese strings are expected to render in figures; the script sets `font.sans-serif = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]` and `axes.unicode_minus = False` for matplotlib.
-- Output figures use a 5-prefix naming convention (`01_roc_curve.png` … `05_confusion_matrix.png`) — keep it when adding new charts so they slot into README/docs in the right order.
+- Output figures use a 2-digit prefix naming convention (`01_roc_curve.png` … `14_denoising_effect.png`) — keep it when adding new charts so they slot into README/docs in the right order. M7 added the 12–14 prefix range for the three anti-fraud charts.
 - All paths in `configs/config.yaml` and `Dockerfile` are relative to repo root; running the pipeline from repo root is the safe assumption.
-</content>
-</invoke>
+- When adding modules under `src/`, the package is recognized by the `src/` layout in `pyproject.toml`; tests import as `from src.X import Y`, not `from X import Y`.
+
+## Test layout
+
+133 tests across 19 files (~8s):
+
+| Test file | Cases | What it covers |
+|-----------|------:|----------------|
+| `test_causal_discovery.py` | 5 | PC + NOTEARS + domain fusion on synthetic data |
+| `test_cate.py` | 8 | 3 EconML methods, Spearman agreement, subgroup analysis |
+| `test_refute.py` | 7 | 4 refuters + E-value + robustness score |
+| `test_counterfactual.py` | 6 | DiCE NSGA-II + immutable/semi-mutable masks |
+| `test_shap.py` | 6 | TreeSHAP + 4-quadrant + subgroup SHAP |
+| `test_decision.py` | 5 | DecisionAdvisor + evidence chain |
+| `test_aggregation.py` | 16 | Bureau / prev / POS / INST / CC aggregators |
+| `test_train.py` | 7 | LightGBM GPU/Optuna toggle, `_resolve_device` |
+| `test_fraud_three_class.py` | 7 | Pseudo-labels + 4-class model + `fraud_score` |
+| `test_fraud_packaging.py` | 7 | Calibration + 4-quadrant + path integrity |
+| `test_fraud_denoising.py` | 6 | Consistency + inflation + denoised P |
+| `test_fraud_pipeline.py` | 5 | FraudGuard end-to-end + 5-level routing |
+| Other (`test_loader`, `test_features`, `test_models`, `test_causal_graph`, `test_estimate`, `test_explain`, `test_drift`) | 47 | Earlier milestones |
