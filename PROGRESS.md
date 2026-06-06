@@ -52,12 +52,17 @@
 
 | # | 创新点 | 模块 | Demo 入口 | 输出 |
 |:---:|------|------|------|------|
-| 1 | 混合因果发现 | `src/causal/discovery.py` | `tests/test_causal_discovery.py` | 6 张 DAG 图 |
+| 1 | 混合因果发现 | `src/causal/discovery.py` | `tests/test_causal_discovery.py` | 5 张图 (合成+Home Credit+领域注入) |
 | 2 | CATE 异质处理 | `src/causal/cate.py` | `tests/test_cate.py` | `cate_distribution.png` |
 | 3 | 反驳验证 | `src/causal/refute.py` | `tests/test_refute.py` | `refutation_results.png` |
 | 4 | 因果约束反事实 | `src/explain/counterfactual.py` | `tests/test_counterfactual.py` | `counterfactual_examples.png` |
 | 5 | SHAP 四象限 | `src/explain/shap_explain.py` | `tests/test_shap.py` | `four_quadrant.png` |
 | + | 决策建议 | `src/explain/decision.py` | `tests/test_decision.py` | 决策报告 JSON |
+
+**修复记录**：M1 完成初版时，因果发现模块的 NOTEARS 求解器存在 bug（augmented-Lagrangian 循环中 rho 起始值 1.0 过大，平滑 L1 缺失，权重塌缩到 0），PC 端点约定也写反（`(1,1)` 当成了无向，实际是 `(-1,-1)`）。修复要点：
+- NOTEARS：`rho_init=1e-2` + 平滑 L1 (`sqrt(W²+eps²)`) + 跟踪 `best_W` 避免后续 AL 迭代把 W 拉回 0
+- PC：识别 causallearn 的 `(-1,-1) = undirected`、`(-1,1) / (1,-1) = directed` 约定
+- 单测：`tests/test_discovery.py` 8 个用例覆盖 NOTEARS/PC/fusion/inject 四个公共 API
 
 **关键技术选型**：
 - 因果发现: `causallearn` (PC + NOTEARS) + 领域知识 DAG 融合
@@ -161,16 +166,18 @@
 
 **PSI 分级**：< 0.10 无漂移, 0.10-0.20 中等, ≥ 0.20 告警
 
-### 单元测试（13 个文件 / 77 用例 / 0.96s）
+### 单元测试（14 个文件 / 85 用例 / 1.34s）
 
 ```
 tests/test_api_schemas.py       # 11 用例  Pydantic schema + service helpers
 tests/test_calibrate.py         #  6 用例  Isotonic Regression 单调性/边界
 tests/test_cate.py              # CATE 模块集成 (M1 demo)
 tests/test_causal_graph.py      #  7 用例  DAG 节点/边/无环/可视化
+tests/test_causal_discovery.py  # 因果发现 demo (PC + NOTEARS + 融合)
 tests/test_counterfactual.py    # DiCE 模块集成 (M1 demo)
 tests/test_decision.py          # DecisionAdvisor 模块集成 (M1 demo)
 tests/test_decision_math.py     # 27 用例  评分/等级/建议/报告/中英
+tests/test_discovery.py         #  8 用例  PC+NOTEARS+fusion+inject+compare
 tests/test_drift_detector.py    # 15 用例  PSI 公式/边界/概念漂移/markdown
 tests/test_refute.py            # Refute 模块集成 (M1 demo)
 tests/test_refute_math.py       #  6 用例  E-value 公式/对称性/单调性
@@ -218,7 +225,7 @@ CausalCredit/
 │   ├── frontend/                 # ✅ app.py + 4 pages
 │   ├── monitoring/               # ✅ drift_detector
 │   └── run_pipeline.py           # ✅ 13 步入口
-├── tests/                        # ✅ 13 文件 / 77 用例
+├── tests/                        # ✅ 14 文件 / 85 用例
 ├── configs/                      # ✅ config.yaml
 ├── scripts/                      # ✅ run_api / run_demo / run_tests / setup_env
 ├── data/                         # ✅ Home Credit + German Credit

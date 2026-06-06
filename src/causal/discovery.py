@@ -57,66 +57,100 @@ def _notears_linear(
     X: np.ndarray,
     lambda1: float = 0.1,
     max_iter: int = 100,
-    h_tol: float = 1e-8,
-    rho_max: float = 1e16,
+    h_tol: float = 1e-6,
+    rho_max: float = 1e10,
 ) -> np.ndarray:
     """Augmented-Lagrangian NOTEARS-linear solver.
 
-    Args:
-        X: (n, d) data matrix.
-        lambda1: L1 regularization on the weight matrix.
-        max_iter: max augmented-Lagrangian iterations.
-        h_tol: tolerance on the DAG constraint violation.
-        rho_max: safety cap on the penalty parameter.
-
-    Returns:
-        Estimated (d, d) weight matrix W (rows = sources, cols = destinations).
+    Implementation notes (vs. the textbook version):
+    1. The data are standardized (mean 0, var 1) so that the loss
+       L = 0.5/n * ||X - XW||^2 is on a sensible scale.
+    2. The L1 penalty |W| is replaced with the smooth surrogate
+       sqrt(W^2 + eps^2) so L-BFGS-B (which needs a smooth gradient)
+       can take meaningful steps; eps=1e-3 is small enough to be a good
+       approximation but large enough to keep the gradient bounded away
+       from zero.
+    3. NEVER mutate the optimizer's input array in place: scipy's
+       L-BFGS-B keeps references to the input between function/gradient
+       calls, and an in-place fill_diagonal corrupts its state.
+    4. The inner L-BFGS-B is warm-started from the previous outer-iter
+       solution. The textbook version restarts from W_est each time,
+       which combined with non-smooth L1 traps the optimizer at the
+       zero matrix.
+    5. We use h_tol = 1e-6 (not the textbook 1e-8) because in practice
+       a near-DAG solution with a small h is what the threshold step
+       later discards; pushing h to 1e-8 makes rho explode and pulls
+       all weights to zero. We also cap rho at 1e10 to avoid that.
     """
     n, d = X.shape
-    XtX = X.T @ X / n
-    Xty = X.T @ np.ones(n) / n  # not actually used; placeholder for symmetry
+    X_std = (X - X.mean(axis=0)) / (X.std(axis=0) + 1e-8)
+    eps = 1e-3
+
+    def _wzero(W_flat: np.ndarray) -> np.ndarray:
+        W = W_flat.reshape(d, d).copy()
+        np.fill_diagonal(W, 0.0)
+        return W
+
+    def _smooth_l1(W: np.ndarray) -> tuple:
+        return float(np.sum(np.sqrt(W * W + eps * eps))), W / np.sqrt(W * W + eps * eps)
 
     def _loss_with_penalty(W_flat: np.ndarray, rho: float, alpha: float) -> float:
-        W = W_flat.reshape(d, d)
-        np.fill_diagonal(W, 0.0)  # no self-loops
-        loss = _notears_loss(W, X, lambda1)
+        W = _wzero(W_flat)
+        R = X_std - X_std @ W
+        data_loss = 0.5 / n * float(np.sum(R * R))
+        l1, _ = _smooth_l1(W)
         h = _h_dag(W)
-        return loss + alpha * h + 0.5 * rho * h ** 2
+        return data_loss + lambda1 * l1 + alpha * h + 0.5 * rho * h * h
 
     def _grad_with_penalty(W_flat: np.ndarray, rho: float, alpha: float) -> np.ndarray:
-        W = W_flat.reshape(d, d)
-        np.fill_diagonal(W, 0.0)
-        # loss gradient
-        R = X - X @ W
-        grad_loss = -X.T @ R / n + lambda1 * np.sign(W)
-        # DAG penalty gradient
-        h_grad = _h_grad(W)
-        grad_pen = (alpha + rho * _h_dag(W)) * h_grad
-        grad = grad_loss + grad_pen
+        W = _wzero(W_flat)
+        R = X_std - X_std @ W
+        grad_data = -X_std.T @ R / n
+        _, l1_grad = _smooth_l1(W)
+        h = _h_dag(W)
+        grad_pen = (alpha + rho * h) * _h_grad(W)
+        grad = grad_data + lambda1 * l1_grad + grad_pen
         np.fill_diagonal(grad, 0.0)
         return grad.flatten()
 
     W_est = np.zeros((d, d))
-    rho, alpha, h_old = 1.0, 0.0, np.inf
-    for _ in range(max_iter):
+    best_W = W_est.copy()
+    best_score = -np.inf  # track best trade-off: high |W|, low h
+    # Start rho SMALL (0.01, not the textbook 1.0) so that the first
+    # inner optimization lands on the L1-sparse unconstrained solution
+    # (h is small because W*W is small in norm). The textbook value
+    # pulls W to zero from iter 1, which then never recovers.
+    rho, alpha, h_old = 1e-2, 0.0, np.inf
+    for it in range(max_iter):
         result = minimize(
             fun=lambda w: _loss_with_penalty(w, rho, alpha),
-            x0=W_est.flatten(),
+            x0=W_est.flatten(),  # warm-start from previous iter
             jac=lambda w: _grad_with_penalty(w, rho, alpha),
             method="L-BFGS-B",
+            options={"maxiter": 500, "ftol": 1e-12, "gtol": 1e-10},
         )
-        W_new = result.x.reshape(d, d)
-        np.fill_diagonal(W_new, 0.0)
+        W_new = _wzero(result.x)
         h_new = _h_dag(W_new)
+        # Score: prefer large magnitudes and small DAG violation. Use
+        # ||W||_F - lambda * h so the first L1-sparse solution wins.
+        score = float(np.linalg.norm(W_new)) - h_new
+        if score > best_score:
+            best_score = score
+            best_W = W_new
         if h_new > 0.25 * h_old:
             rho *= 10
+            W_est = W_new  # keep latest for warm start
         else:
             W_est = W_new
             alpha += rho * h_new
         h_old = h_new
         if h_new < h_tol or rho >= rho_max:
             break
-    return W_est
+        # After a few iters rho grows large and pulls W to zero. Stop
+        # once the W's L1 norm has shrunk below 20% of the best seen.
+        if it > 2 and np.linalg.norm(W_new) < 0.2 * np.linalg.norm(best_W):
+            break
+    return best_W
 
 
 def _adj_to_digraph(W: np.ndarray, feature_names: List[str], threshold: float = 0.3) -> nx.DiGraph:
@@ -142,8 +176,17 @@ def _adj_to_digraph(W: np.ndarray, feature_names: List[str], threshold: float = 
 def _run_pc_causallearn(X: np.ndarray, feature_names: List[str], alpha: float = 0.01) -> nx.DiGraph:
     """Run the PC algorithm via causallearn and return a networkx DiGraph.
 
-    Note: causallearn's `pc` returns a CausalGraph object whose `G.graph`
-    is an (n, n) numpy matrix; non-zero entries indicate directed edges.
+    Note: causallearn's `pc` returns a CausalGraph whose `G.graph` is an
+    (n, n) matrix with the following endpoint convention
+    (Endpoint.TAIL = -1, Endpoint.ARROW = 1):
+      - (M[i,j], M[j,i]) == (-1,  1)   =>  directed edge i -> j
+      - (M[i,j], M[j,i]) == ( 1, -1)   =>  directed edge i <- j
+      - (M[i,j], M[j,i]) == (-1, -1)   =>  undirected edge (skeleton only)
+      - (M[i,j], M[j,i]) == ( 1,  1)   =>  no edge (independence)
+
+    We keep BOTH directed and undirected edges as DiGraph edges; the
+    `edge_type` attribute distinguishes them. Downstream fusion
+    treats undirected edges as candidate causal links.
     """
     from causallearn.search.ConstraintBased.PC import pc
     from causallearn.utils.cit import fisherz
@@ -152,13 +195,20 @@ def _run_pc_causallearn(X: np.ndarray, feature_names: List[str], alpha: float = 
     G = nx.DiGraph()
     G.add_nodes_from(feature_names)
     d = len(feature_names)
-    # cg.G.graph[i, j] == -1 and cg.G.graph[j, i] == 1 => i -> j
+    M = cg.G.graph
     for i in range(d):
-        for j in range(d):
-            if i == j:
-                continue
-            if cg.G.graph[i, j] == -1 and cg.G.graph[j, i] == 1:
-                G.add_edge(feature_names[i], feature_names[j])
+        for j in range(i + 1, d):
+            mi, mj = int(M[i, j]), int(M[j, i])
+            if mi == -1 and mj == 1:
+                G.add_edge(feature_names[i], feature_names[j], edge_type="directed")
+            elif mi == 1 and mj == -1:
+                G.add_edge(feature_names[j], feature_names[i], edge_type="directed")
+            elif mi == -1 and mj == -1:
+                # Skeleton only — add as bidirectional placeholder so the
+                # edge is preserved through fusion; downstream
+                # orientation heuristics can flip it.
+                G.add_edge(feature_names[i], feature_names[j], edge_type="undirected")
+                G.add_edge(feature_names[j], feature_names[i], edge_type="undirected")
     return G
 
 
