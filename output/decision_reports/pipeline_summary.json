@@ -6,10 +6,10 @@
     "lgbm_test_f1": 0.034397
   },
   "discovery": {
-    "n_pc_edges": 31,
-    "n_notears_edges": 8,
-    "n_fused_edges": 37,
-    "n_fused_with_dk": 45,
+    "n_pc_edges": 37,
+    "n_notears_edges": 7,
+    "n_fused_edges": 39,
+    "n_fused_with_dk": 46,
     "overlap_rate_domain": 1.0
   },
   "cate": {

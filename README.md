@@ -47,7 +47,7 @@ CausalCredit 是一套面向金融机构的**因果推理增强信用评分系�
 # 3) Streamlit 前端（M3）
 /home/tony/anaconda3/envs/ldq_cc/bin/streamlit run src/frontend/app.py
 
-# 4) 单元测试（M4，77 个用例，~1 秒）
+# 4) 单元测试（M4，85 个用例，~1.3 秒）
 /home/tony/anaconda3/envs/ldq_cc/bin/python -m pytest tests/ -v
 ```
 
@@ -76,7 +76,7 @@ CausalCredit/
 │   ├── frontend/              # Streamlit 4 页（dashboard / 因果图 / 反事实 / 决策）
 │   ├── monitoring/            # PSI 漂移检测（特征 / 预测 / 概念）
 │   └── run_pipeline.py        # 13 步端到端入口
-├── tests/                     # 13 个测试文件，77 用例
+├── tests/                     # 14 个测试文件，85 用例
 ├── configs/                   # config.yaml
 ├── scripts/                   # run_api / run_demo / run_tests / setup_env
 ├── data/                      # Home Credit + German Credit
@@ -108,16 +108,18 @@ CausalCredit/
 
 ## 当前实测结果（Home Credit, 30 万行）
 
+> 详细 per-step 耗时、ATE/CATE/Refutation 数值、决策报告样例见 [`BENCHMARKS.md`](BENCHMARKS.md)
+
 | 指标 | 数值 |
 |------|------|
 | 测试集 AUC-ROC | 0.7547 |
-| 测试集 KS | 0.4120 |
-| ATE（`AMT_CREDIT` → `TARGET`） | +0.0025 / 千美元（CI 显著） |
-| 反驳验证 | 4 类中 3 类通过（E-value = 1.43） |
+| ATE（`AMT_CREDIT` → `TARGET`, DoWhy backdoor） | +0.0092 (high vs low credit) |
+| CATE 一致性（3 方法 mean Spearman） | 0.578 |
+| 反驳验证 | 4 类中 3 类通过（E-value = 1.96） |
 | 决策报告多样性 | 3 份样本覆盖 P = 0.31% / 5.35% / 73.50% |
 | 输出图表 | 11 张 PNG + 9 张 M1 demo 图 |
-| 单元测试 | 77 用例 / 0.96s |
-| Pipeline 端到端耗时 | ~75 秒（CPU） |
+| 单元测试 | 85 用例 / 1.34s |
+| Pipeline 端到端耗时 | **84.8 秒**（CPU, 13 步, per-step 详见 BENCHMARKS） |
 
 ## 数据集
 

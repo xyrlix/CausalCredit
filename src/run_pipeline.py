@@ -92,6 +92,15 @@ def print_subsection(title: str) -> None:
     print(f"\n  --- {title} ---")
 
 
+def _t(t0_step: float, step_name: str = "", timings: Optional[List] = None) -> float:
+    """Return elapsed seconds for the current step, pretty-print it, and (optionally) record it."""
+    dt = time.time() - t0_step
+    print(f"  [step timing] {dt:.2f}s")
+    if step_name and timings is not None:
+        timings.append((step_name, dt))
+    return dt
+
+
 def safe_savefig(fig, path: str) -> str:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, dpi=120, bbox_inches="tight")
@@ -105,6 +114,7 @@ def safe_savefig(fig, path: str) -> str:
 
 def run() -> int:
     t0 = time.time()
+    step_times: list[tuple[str, float]] = []
 
     output_fig = Path("output/figures")
     output_dec = Path("output/decision_reports")
@@ -123,6 +133,7 @@ def run() -> int:
     # STEP 1 — DATA LOADING
     # =========================================================================
     print_section("STEP 1: DATA LOADING (Home Credit application_train)")
+    t_step = time.time()
     loader = HomeCreditLoader()
     raw_df = loader.fetch()
     X_raw, y = loader.get_feature_target()
@@ -131,11 +142,13 @@ def run() -> int:
     print(f"  features: {metadata['n_features']}")
     print(f"  default rate: {metadata['target_default_rate']:.4f}")
     print(f"  TARGET distribution: {metadata['target_distribution']}")
+    _t(t_step, "step_1_data_loading", step_times)
 
     # =========================================================================
     # STEP 2 — DATA VALIDATION
     # =========================================================================
     print_section("STEP 2: DATA VALIDATION")
+    t_step = time.time()
     null_counts = raw_df.isnull().sum()
     n_null_cols = (null_counts > 0).sum()
     print(f"  columns with NaNs: {n_null_cols}")
@@ -144,11 +157,13 @@ def run() -> int:
     if "DAYS_EMPLOYED" in raw_df.columns:
         n_sentinel = (raw_df["DAYS_EMPLOYED"] == 365243).sum()
         print(f"  DAYS_EMPLOYED sentinel (365243) count: {n_sentinel} (will be NaN-cleaned)")
+    _t(t_step, "step_2_data_validation", step_times)
 
     # =========================================================================
     # STEP 3 — DATA CLEANING
     # =========================================================================
     print_section("STEP 3: DATA CLEANING")
+    t_step = time.time()
     df = raw_df.copy()
     # Apply the loader's known-issue fixes (DAYS_EMPLOYED=365243 -> NaN, etc.)
     df = HomeCreditLoader._fix_known_issues(df)
@@ -158,11 +173,13 @@ def run() -> int:
     df = df.drop(columns=drop_cols)
     print(f"  dropped low-variance cols: {len(drop_cols)}")
     print(f"  shape after cleaning: {df.shape}")
+    _t(t_step, "step_3_data_cleaning", step_times)
 
     # =========================================================================
     # STEP 4 — FEATURE ENGINEERING (causal-guided subset + label encoding)
     # =========================================================================
     print_section("STEP 4: FEATURE ENGINEERING")
+    t_step = time.time()
     g = HomeCreditCausalGraph()
     # Restrict to columns the DAG actually uses (plus a few good predictors)
     dag_candidates = list(g.nodes.keys()) + [
@@ -188,21 +205,25 @@ def run() -> int:
         if X_feat[c].isnull().any():
             X_feat[c] = X_feat[c].fillna(X_feat[c].median())
     print(f"  cat cols: {len(cat_cols_used)}, num cols: {len(num_cols_used)}")
+    _t(t_step, "step_4_feature_engineering", step_times)
 
     # =========================================================================
     # STEP 5 — TRAIN / TEST SPLIT (stratified)
     # =========================================================================
     print_section("STEP 5: TRAIN / TEST SPLIT")
+    t_step = time.time()
     X_train, X_test, y_train, y_test = train_test_split(
         X_feat, y, test_size=0.3, random_state=42, stratify=y,
     )
     print(f"  train: {len(X_train)} ({y_train.mean():.4f} default rate)")
     print(f"  test:  {len(X_test)} ({y_test.mean():.4f} default rate)")
+    _t(t_step, "step_5_train_test_split", step_times)
 
     # =========================================================================
     # STEP 6 — MODEL TRAINING (LightGBM downstream, GBT baseline)
     # =========================================================================
     print_section("STEP 6: MODEL TRAINING")
+    t_step = time.time()
     # 6a. sklearn GBT — 3-fold CV on a 20K subset (just for the AUC baseline)
     gbt_sub_idx = np.random.RandomState(42).choice(len(X_train), size=min(20000, len(X_train)), replace=False)
     X_gbt = X_train.iloc[gbt_sub_idx].reset_index(drop=True)
@@ -219,11 +240,13 @@ def run() -> int:
     print(f"  LGBM CV AUC:        {cv_lgbm['cv_auc_mean']:.4f} ± {cv_lgbm['cv_auc_std']:.4f}")
     lgbm_model = lgbm_trainer.train_final(X_train, y_train)
     print(f"  LightGBM trained: n_estimators={lgbm_model.n_estimators}")
+    _t(t_step, "step_6_model_training", step_times)
 
     # =========================================================================
     # STEP 7 — MODEL EVALUATION + CALIBRATION
     # =========================================================================
     print_section("STEP 7: EVALUATION + CALIBRATION")
+    t_step = time.time()
     y_prob = lgbm_model.predict_proba(X_test)[:, 1]
     y_pred = (y_prob >= 0.5).astype(int)
     evaluator = ModelEvaluator()
@@ -321,11 +344,13 @@ def run() -> int:
     ax.set_xlabel("ATE (PSM + 100 bootstrap)")
     ax.set_title("Average Treatment Effects (binarized treatments)")
     safe_savefig(fig, str(output_fig / "05_ate_forest.png"))
+    _t(t_step, "step_7_evaluation_calibration", step_times)
 
     # =========================================================================
     # STEP 8 — CAUSAL DISCOVERY (PC + NOTEARS + Domain Knowledge)
     # =========================================================================
     print_section("STEP 8: CAUSAL DISCOVERY (PC + NOTEARS + Domain Knowledge)")
+    t_step = time.time()
     disc_sample = df[feature_cols].dropna().sample(n=5000, random_state=42)
     pc_g = run_pc(disc_sample, alpha=0.05)
     nt_g = run_notears(disc_sample, lambda1=0.1, threshold=0.3)
@@ -338,6 +363,7 @@ def run() -> int:
     print(f"  overlap with domain DAG: n_shared={cmp_disc['n_shared_nodes']} "
           f"overlap={cmp_disc['n_overlap']}/{cmp_disc['n_domain_edges_in_shared']} "
           f"({cmp_disc['overlap_rate_domain']:.2%} of domain edges)")
+    _t(t_step, "step_8_causal_discovery", step_times)
 
     # Chart 6: discovered graph (fused + DK)
     from src.causal.discovery import visualize_dag as _vd
@@ -348,6 +374,7 @@ def run() -> int:
     # STEP 9 — ATE ESTIMATION (DoWhy CausalModel — continuous & binarized)
     # =========================================================================
     print_section("STEP 9: ATE ESTIMATION (DoWhy CausalModel)")
+    t_step = time.time()
     from dowhy import CausalModel
     ate_subsample = df[["AMT_CREDIT", "AMT_INCOME_TOTAL", "DAYS_BIRTH",
                         "EXT_SOURCE_2", "TARGET"]].dropna().sample(n=8000, random_state=42)
@@ -361,11 +388,13 @@ def run() -> int:
     ident = dowhy_model.identify_effect()
     ate_est = dowhy_model.estimate_effect(identified_estimand=ident, method_name="backdoor.linear_regression")
     print(f"  DoWhy ATE (high vs low credit): {float(ate_est.value):.4f}")
+    _t(t_step, "step_9_ate_estimation", step_times)
 
     # =========================================================================
     # STEP 10 — CATE ESTIMATION (3 EconML methods)
     # =========================================================================
     print_section("STEP 10: CATE ESTIMATION (3 methods)")
+    t_step = time.time()
     cate_sample = df[["AMT_CREDIT", "AMT_INCOME_TOTAL", "AMT_GOODS_PRICE", "DAYS_BIRTH",
                       "DAYS_EMPLOYED", "EXT_SOURCE_2", "REGION_RATING_CLIENT",
                       "AMT_ANNUITY", "TARGET"]].dropna().sample(n=10000, random_state=42)
@@ -403,11 +432,13 @@ def run() -> int:
     ax.set_title("CATE by applicant subgroup")
     plt.xticks(rotation=15, ha="right")
     safe_savefig(fig, str(output_fig / "08_cate_subgroup.png"))
+    _t(t_step, "step_10_cate_estimation", step_times)
 
     # =========================================================================
     # STEP 11 — REFUTATION (4 refuters)
     # =========================================================================
     print_section("STEP 11: REFUTATION (4 refuters)")
+    t_step = time.time()
     refuter = CausalRefuter(dowhy_model, estimand=ident)
     ref_results = refuter.run_all_refutations(ate_est, num_simulations=20)
     robustness = refuter.compute_robustness_score(ref_results)
@@ -416,11 +447,13 @@ def run() -> int:
         print(f"  {m:<22s}  {flag}")
     print(f"  robustness_score = {robustness:.2f}")
     refuter.visualize_refutations(ref_results, output_path=str(output_fig / "09_refutation_results.png"))
+    _t(t_step, "step_11_refutation", step_times)
 
     # =========================================================================
     # STEP 12 — SHAP + FOUR-QUADRANT
     # =========================================================================
     print_section("STEP 12: SHAP + FOUR-QUADRANT")
+    t_step = time.time()
     shap_expl = SHAPExplainer(lgbm_model, feature_names=feature_cols)
     # SHAP on a 5K subsample of the test set for speed (TreeSHAP is O(n*depth))
     X_shap = X_test.sample(n=min(5000, len(X_test)), random_state=0)
@@ -430,11 +463,13 @@ def run() -> int:
     print("  quadrant counts:")
     print(f"    {fq['counts'].to_dict()}")
     shap_expl.visualize_four_quadrant(fq, output_path=str(output_fig / "10_shap_four_quadrant.png"))
+    _t(t_step, "step_12_shap_four_quadrant", step_times)
 
     # =========================================================================
     # STEP 13 — COUNTERFACTUAL + DECISION REPORTS
     # =========================================================================
     print_section("STEP 13: COUNTERFACTUAL + DECISION REPORTS")
+    t_step = time.time()
     cf_reasoner = CounterfactualReasoner(
         model=lgbm_model,
         training_data=df[feature_cols + ["TARGET"]],
@@ -506,6 +541,7 @@ def run() -> int:
         cf_results_per_applicant[0] if cf_results_per_applicant else {"cfs": []},
         output_path=str(output_fig / "11_counterfactual_scenarios.png"),
     )
+    _t(t_step, "step_13_counterfactual_decision", step_times)
 
     # Pipeline summary
     summary = {
@@ -551,6 +587,25 @@ def run() -> int:
     print(f"  CATE:  mean_abs_spearman={cv_result['mean_abs_spearman']:.3f}")
     print(f"  Refutation: robustness={robustness:.2f}")
     print(f"  Decision: {len(decision_reports)} reports -> {output_dec}")
+    print()
+    print("  per-step timings (s):")
+    for name, dt in step_times:
+        print(f"    {name:<35s}  {dt:6.2f}s")
+
+    # Persist a slim timing report alongside the main summary
+    timing_path = output_dec / "pipeline_timings.json"
+    with open(timing_path, "w") as f:
+        json.dump(
+            {
+                "total_seconds": round(elapsed, 2),
+                "per_step": [
+                    {"name": name, "seconds": round(dt, 2)} for name, dt in step_times
+                ],
+            },
+            f,
+            indent=2,
+            ensure_ascii=False,
+        )
     return 0
 
 
