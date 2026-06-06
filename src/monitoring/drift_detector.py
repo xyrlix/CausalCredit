@@ -137,6 +137,50 @@ class DriftDetector:
         }
 
     # ------------------------------------------------------------------
+    # Categorical / routing drift
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _categorical_distribution(values: pd.Series, categories: List[str]) -> np.ndarray:
+        """Return category proportions aligned to ``categories`` order."""
+        counts = values.value_counts()
+        return np.array([counts.get(c, 0) for c in categories], dtype=float) / max(len(values), 1)
+
+    def detect_routing_drift(
+        self,
+        reference_routings: pd.Series,
+        current_routings: pd.Series,
+        categories: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """PSI over the categorical distribution of routing labels.
+
+        FraudGuard routes each applicant to one of
+        ``{REJECT_FRAUD, REJECT_PACKAGING, REVIEW_DENOISED,
+        REVIEW_BORDERLINE, PROCEED}``.  A shift in this
+        distribution — e.g. ``REJECT_FRAUD`` doubling from 2.5%
+        to 5% — usually means the upstream risk profile has
+        changed (a new fraud campaign, a macroeconomic shock,
+        a model regression), and the threshold values may need
+        to be re-tuned.
+
+        Returns:
+            ``{psi, status, ref_dist, cur_dist, categories}``
+            where ``ref_dist`` and ``cur_dist`` are aligned to
+            ``categories`` and sum to 1.
+        """
+        if categories is None:
+            categories = sorted(set(reference_routings) | set(current_routings))
+        ref_dist = self._categorical_distribution(reference_routings, categories)
+        cur_dist = self._categorical_distribution(current_routings, categories)
+        psi = _safe_psi_from_dists(ref_dist, cur_dist)
+        return {
+            "psi": psi,
+            "status": self._label_psi(psi),
+            "ref_dist": {c: float(p) for c, p in zip(categories, ref_dist)},
+            "cur_dist": {c: float(p) for c, p in zip(categories, cur_dist)},
+            "categories": list(categories),
+        }
+
+    # ------------------------------------------------------------------
     # Concept drift
     # ------------------------------------------------------------------
     def detect_concept_drift(
@@ -196,6 +240,8 @@ class DriftDetector:
         current_scores: Optional[pd.Series] = None,
         baseline_auc: Optional[float] = None,
         current_auc: Optional[float] = None,
+        reference_routings: Optional[pd.Series] = None,
+        current_routings: Optional[pd.Series] = None,
     ) -> str:
         lines = ["# Drift Report", ""]
         lines.append(f"- Reference rows: {len(self.reference_data)}")
@@ -226,8 +272,21 @@ class DriftDetector:
                     lines.append(f"- **{k}**: {v}")
             lines.append("")
 
+        if reference_routings is not None and current_routings is not None:
+            lines.append("## 3. Routing distribution drift (M8.1e)")
+            rd = self.detect_routing_drift(reference_routings, current_routings)
+            lines.append(f"- **PSI**: {rd['psi']:.4f}  →  **{rd['status']}**")
+            lines.append("")
+            lines.append("| Routing | Reference | Current | Δ |")
+            lines.append("|---------|-----------|---------|---|")
+            for c in rd["categories"]:
+                r = rd["ref_dist"].get(c, 0.0)
+                u = rd["cur_dist"].get(c, 0.0)
+                lines.append(f"| {c} | {r:.4f} | {u:.4f} | {u - r:+.4f} |")
+            lines.append("")
+
         if baseline_auc is not None and current_auc is not None:
-            lines.append("## 3. Concept drift")
+            lines.append("## 4. Concept drift")
             cd = self.detect_concept_drift(current_auc, baseline_auc)
             for k, v in cd.items():
                 lines.append(f"- **{k}**: {v}")

@@ -1,6 +1,6 @@
 {
   "applicant_id": "HC_023041",
-  "timestamp": "2026-06-06T11:10:25.292602Z",
+  "timestamp": "2026-06-06T14:23:17.284689Z",
   "default_probability": 0.0026,
   "score": 848,
   "risk_grade": "A",
@@ -45,6 +45,72 @@
   ],
   "counterfactual_recommendations": [],
   "causal_narrative": "Default risk is 0.26% (score=848, grade A). Primary driver: DAYS_EMPLOYED (SHAP=-0.5353, quadrant=TRUSTED). Heterogeneous effect estimate: |CATE|=0.0000.",
+  "fairness": {
+    "applicant_groups": {
+      "gender": "F",
+      "age_group": "mid",
+      "income_group": "low",
+      "education_group": "secondary"
+    },
+    "slice_summaries": [
+      {
+        "slice": "gender",
+        "status": "WARNING",
+        "dp_gap": 0.004,
+        "eo_gap": 0.0118,
+        "di_ratio": 0.5383,
+        "n_groups": 3,
+        "n_total": 50000,
+        "violated_metrics": [
+          "DI=0.538<0.8"
+        ]
+      },
+      {
+        "slice": "age_group",
+        "status": "WARNING",
+        "dp_gap": 0.0096,
+        "eo_gap": 0.0404,
+        "di_ratio": 0.0816,
+        "n_groups": 3,
+        "n_total": 50000,
+        "violated_metrics": [
+          "DI=0.082<0.8"
+        ]
+      },
+      {
+        "slice": "income_group",
+        "status": "WARNING",
+        "dp_gap": 0.0036,
+        "eo_gap": 0.0213,
+        "di_ratio": 0.5112,
+        "n_groups": 3,
+        "n_total": 50000,
+        "violated_metrics": [
+          "DI=0.511<0.8"
+        ]
+      },
+      {
+        "slice": "education_group",
+        "status": "WARNING",
+        "dp_gap": 0.0077,
+        "eo_gap": 0.05,
+        "di_ratio": 0.0,
+        "n_groups": 4,
+        "n_total": 50000,
+        "violated_metrics": [
+          "DI=0.000<0.8"
+        ]
+      }
+    ],
+    "verdict": "WARNING",
+    "violated_slices": [
+      "gender",
+      "age_group",
+      "income_group",
+      "education_group"
+    ],
+    "regulatory_note": "One or more slices are WARNING. Model output may be biased; request additional documentation from the applicant."
+  },
   "fraud": {
     "fraud_score": 7.030536557390716e-06,
     "defaulter_sub_proba": {

@@ -59,3 +59,18 @@ frontend:
   port: 8501
   theme: "light"
   api_url: "http://localhost:8000"
+
+# M8.1d: anti-fraud routing thresholds (overridable from CLI / API)
+# Routing priority (highest first):
+#   REJECT_FRAUD     — fraud_score >= fraud_reject_threshold
+#   REJECT_PACKAGING — packaging_score >= packaging_reject_threshold
+#   REVIEW_DENOISED  — denoising_action == "FLAG_FOR_REVIEW"
+#   REVIEW_BORDERLINE — fraud_score >= fraud_borderline_threshold OR
+#                       packaging_score >= packaging_borderline_threshold
+#   PROCEED          — clean
+fraud_guard:
+  fraud_reject_threshold: 0.10
+  fraud_borderline_threshold: 0.05
+  packaging_reject_threshold: 0.50
+  packaging_borderline_threshold: 0.30
+  consistency_flag_threshold: 0.50  # causal_consistency below this → DENOISED review

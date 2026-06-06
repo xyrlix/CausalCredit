@@ -121,6 +121,30 @@ def _format_fraud_section(fr: Dict) -> str:
     return "\n".join(lines)
 
 
+def _format_fairness_section(block: Dict) -> str:
+    """Format the fairness sub-report as a markdown section (M8.1)."""
+    lines = [
+        "## 公平性审计 (M8.1 Fairness Audit — HKMA / EU AI Act)\n",
+        f"**总体裁定**: `{block['verdict']}` — {block['regulatory_note']}\n",
+        "**本申请人所属分组**:",
+    ]
+    for k, v in block["applicant_groups"].items():
+        lines.append(f"- {k}: `{v}`")
+    lines.append("")
+    lines.append("| 切片 | 状态 | DP gap | EO gap | DI ratio | n_groups | n_total |")
+    lines.append("|------|------|--------|--------|----------|----------|---------|")
+    for s in block["slice_summaries"]:
+        lines.append(
+            f"| {s['slice']} | `{s['status']}` | {s['dp_gap']:.3f} | {s['eo_gap']:.3f} | "
+            f"{s['di_ratio']:.3f} | {s['n_groups']} | {s['n_total']} |"
+        )
+    if block["violated_slices"]:
+        lines.append("")
+        lines.append(f"**违反阈值切片**: {', '.join(block['violated_slices'])}")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def _t(t0_step: float, step_name: str = "", timings: Optional[List] = None) -> float:
     """Return elapsed seconds for the current step, pretty-print it, and (optionally) record it."""
     dt = time.time() - t0_step
@@ -814,6 +838,97 @@ def run() -> int:
     print(f"  packaging_score range: {batch_df['packaging_score'].min():.3f} – {batch_df['packaging_score'].max():.3f}")
     print(f"  routing distribution: {routing_counts.to_dict()}")
 
+    # =========================================================================
+    # STEP 15 — FAIRNESS AUDIT + ROUTING DRIFT  (M8.1)
+    # =========================================================================
+    print_section("STEP 15: FAIRNESS AUDIT (HKMA / EU AI Act)")
+    t_step = time.time()
+
+    from src.fairness import (
+        build_default_slices,
+        summarize_fairness,
+        render_all,
+    )
+    from src.monitoring.drift_detector import DriftDetector
+
+    print("  Computing per-slice fairness summaries on the test set...")
+    # Use a 50K cap to keep the slicing fast on 30K+ test rows
+    n_fair = min(50_000, len(X_test))
+    # Slicing needs the *raw* CODE_GENDER / DAYS_BIRTH / AMT_INCOME_TOTAL /
+    # NAME_EDUCATION_TYPE values, not the label-encoded versions in X_test.
+    raw_slice_cols = [c for c in ("CODE_GENDER", "DAYS_BIRTH", "AMT_INCOME_TOTAL", "NAME_EDUCATION_TYPE") if c in df.columns]
+    X_test_raw_slice = df.loc[X_test.index, raw_slice_cols].iloc[:n_fair]
+    slices_arrays = build_default_slices(X_test_raw_slice)
+    slice_summaries = {}
+    for name, groups in slices_arrays.items():
+        s = summarize_fairness(
+            name,
+            np.asarray(y_test)[:n_fair],
+            np.asarray(y_pred)[:n_fair],
+            np.asarray(y_prob)[:n_fair],
+            groups,
+        )
+        slice_summaries[name] = s
+        print(f"    {name:<18s}  status={s.status:<7s}  "
+              f"DP={s.dp_gap:.3f}  EO={s.eo_gap:.3f}  DI={s.di_ratio:.3f}  "
+              f"(n_groups={s.n_groups}, n={s.n_total})")
+
+    # Render 3 fairness charts (15, 16, 17)
+    fairness_chart_paths = render_all(slice_summaries, str(output_fig))
+    print(f"  Wrote {len(fairness_chart_paths)} fairness charts to {output_fig}/")
+
+    # Build a per-applicant fairness block and inject into each decision report
+    print("  Building per-applicant fairness block for each decision report...")
+    advisor = DecisionAdvisor()
+    fairness_blocks = []
+    for r, pos in zip(decision_reports, selected_positions):
+        # Use the raw (unencoded) values for slicing so gender / education
+        # bucketing still works on the original category strings
+        features = X_test_raw_slice.iloc[pos].to_dict() if pos < len(X_test_raw_slice) else X_test.iloc[pos].to_dict()
+        block = advisor.build_fairness_block(
+            features=features,
+            X_test=X_test_raw_slice,
+            y_test=np.asarray(y_test)[:n_fair],
+            y_pred_test=np.asarray(y_pred)[:n_fair],
+            y_score_test=np.asarray(y_prob)[:n_fair],
+        )
+        r["fairness"] = block
+        fairness_blocks.append(block)
+        # Re-save JSON
+        json_path = output_dec / f"{r['applicant_id']}.json"
+        with open(json_path, "w") as f:
+            json.dump(r, f, indent=2, ensure_ascii=False)
+        # Append a fairness section to the markdown
+        md_path = output_dec / f"{r['applicant_id']}.md"
+        if md_path.exists():
+            existing = md_path.read_text(encoding="utf-8")
+            fair_section = _format_fairness_section(block)
+            with open(md_path, "w", encoding="utf-8") as f:
+                f.write(existing + "\n\n" + fair_section)
+
+    # Routing distribution drift (M8.1e)
+    print("  Computing routing-distribution drift (M7 baseline vs current)...")
+    M7_BASELINE = {
+        "PROCEED": 0.052, "REVIEW_BORDERLINE": 0.914,
+        "REJECT_FRAUD": 0.025, "REJECT_PACKAGING": 0.009,
+    }
+    M7_categories = list(M7_BASELINE.keys())
+    ref_routing = pd.Series(
+        rng.choice(M7_categories, size=2000, p=[M7_BASELINE[c] for c in M7_categories])
+    )
+    cur_routing = batch_df["routing"].reset_index(drop=True)
+    # Align to same categories to keep the comparison apples-to-apples
+    drift_detector = DriftDetector(reference_data=X_train.iloc[:100])
+    drift_result = drift_detector.detect_routing_drift(
+        ref_routing, cur_routing, categories=M7_categories
+    )
+    print(f"    PSI={drift_result['psi']:.4f}  status={drift_result['status']}")
+    for c in M7_categories:
+        print(f"      {c:<22s}  ref={drift_result['ref_dist'][c]:.3f}  "
+              f"cur={drift_result['cur_dist'][c]:.3f}")
+
+    _t(t_step, "step_15_fairness", step_times)
+
     # Pipeline summary
     summary = {
         "model": {
@@ -850,6 +965,26 @@ def run() -> int:
             "denoised_mean_inflation": float(
                 (batch_df["denoised_default_proba"] - batch_df["default_proba"]).mean()
             ),
+        },
+        "fairness": {
+            "verdict": next(iter(fairness_blocks), {}).get("verdict", "n/a"),
+            "violated_slices": next(iter(fairness_blocks), {}).get("violated_slices", []),
+            "slices": {
+                s: {
+                    "status": slice_summaries[s].status,
+                    "dp_gap": slice_summaries[s].dp_gap,
+                    "eo_gap": slice_summaries[s].eo_gap,
+                    "di_ratio": slice_summaries[s].di_ratio,
+                    "n_groups": slice_summaries[s].n_groups,
+                }
+                for s in slice_summaries
+            },
+        },
+        "routing_drift": {
+            "psi": float(drift_result["psi"]),
+            "status": drift_result["status"],
+            "ref_dist": drift_result["ref_dist"],
+            "cur_dist": drift_result["cur_dist"],
         },
         "decision_reports": [
             {"applicant_id": r["applicant_id"], "score": r["score"], "risk_grade": r["risk_grade"]}

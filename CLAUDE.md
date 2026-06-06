@@ -20,13 +20,13 @@ All build / lint / test / run entry points are in the `Makefile`:
 - `make clean` — caches only (does NOT touch `output/` or trained models)
 - `docker-compose up --build` — API `:8000` + frontend `:8501`
 
-The end-to-end pipeline (14 steps, fully working):
+The end-to-end pipeline (15 steps, fully working):
 
 ```bash
-python -m src.run_pipeline    # ~195s on CPU, 14 steps, Home Credit 307K rows
+python -m src.run_pipeline    # ~212s on CPU, 15 steps, Home Credit 307K rows
 ```
 
-**14 PNGs** land in `output/figures/` (11 from M0–M6 + 3 from M7 anti-fraud: `12_fraud_score_routing.png`, `13_packaging_scatter.png`, `14_denoising_effect.png`).
+**17 PNGs** land in `output/figures/` (11 from M0–M6 + 3 from M7 anti-fraud: `12_fraud_score_routing.png`, `13_packaging_scatter.png`, `14_denoising_effect.png` + 3 from M8.1 fairness: `12_fairness_group_rates.png`, `13_fairness_metric_gaps.png`, `14_fairness_status.png`).
 
 ## Architecture
 
@@ -72,7 +72,19 @@ Both expose `get_treatment_variables`, `get_outcome_variable`, `get_confounders(
 1. **`three_class.py::ThreeClassFraudClassifier`** — 4-class LightGBM (non_default + fraudulent / non_malicious / systemic). Pseudo-labels are constructed from business rules since no fraud ground-truth exists: `fraudulent` triggered by `INST__DPD_MAX >= 30` OR (high income z + low employment z) OR (low EXT_SOURCE_1 + high income z); `systemic` triggered by `ORGANIZATION_TYPE` matching decline-industry substrings.
 2. **`packaging.py::PackagingDetector`** — `packaging_score = UNTRUSTED / (TRUSTED + UNTRUSTED)` over the applicant's top-25% |SHAP| features. Path integrity checks 3 domain-DAG chains (income→goods→credit→annuity, income→ext_score, age→employment→income). Per-applicant SHAP values are required for a non-uniform score; falls back to global quadrant labels if not provided.
 3. **`denoising.py::CausalDenoisingScorer`** — `causal_consistency = sign(repayment_z) × sign(consumption_z)` mapped to [0, 1] (5 INST__ cols vs 4 CC_/POS_ cols). `inflation = clip((1-consistency) × 0.15 × 5, 0, 0.15)`. `denoised_P(default) = P(default) + inflation`.
-4. **`pipeline.py::FraudGuard`** — orchestrator with 5-level routing (`REJECT_FRAUD` ≥ 0.10 / `REJECT_PACKAGING` ≥ 0.50 / `REVIEW_DENOISED` / `REVIEW_BORDERLINE` ≥ 0.30 / `PROCEED`). Wired into the pipeline at STEP 14; the 3 picked applicants get a `fraud` field injected into their decision JSON, and a 1K test subsample is batch-scored for charts.
+4. **`pipeline.py::FraudGuard`** — orchestrator with 5-level routing (`REJECT_FRAUD` ≥ 0.10 / `REJECT_PACKAGING` ≥ 0.50 / `REVIEW_DENOISED` / `REVIEW_BORDERLINE` ≥ 0.30 / `PROCEED`). Wired into the pipeline at STEP 14; the 3 picked applicants get a `fraud` field injected into their decision JSON, and a 1K test subsample is batch-scored for charts. **Routing thresholds are now in `FraudGuardConfig` (M8.1d)** — loaded from `configs/config.yaml::fraud_guard` so the same code can run multiple products (cash loan vs student loan) with different thresholds.
+
+### Fairness audit (M8.1, STEP 15)
+
+`src/fairness/` contains 3 modules wired into the pipeline at STEP 15:
+
+- **`metrics.py`** — 3 standard group-fairness metrics for binary classifiers, with HKMA / EU AI Act / EEOC thresholds baked in: `demographic_parity_gap` (max-min selection rate, < 0.05), `equal_opportunity_gap` (max-min TPR, < 0.05), `disparate_impact_ratio` (min/max, ≥ 0.80). `summarize_fairness` returns a `FairnessSummary` with a status of `FAIR` / `WARNING` / `UNFAIR`.
+- **`slicing.py`** — `SLICE_DEFINITIONS` for 4 default slices (`gender` from `CODE_GENDER`, `age_group` from `DAYS_BIRTH`, `income_group` from `AMT_INCOME_TOTAL`, `education_group` from `NAME_EDUCATION_TYPE`). `slice_dataset` returns a (n,) group-label array; missing/unknown values are mapped to `"UNKNOWN"` and **filtered out of all metric calculations** in `_filter_unknown_groups` (otherwise a few bad rows could flip a model from `FAIR` to `UNFAIR`).
+- **`visualize.py`** — 3 PNGs: `12_fairness_group_rates.png` (per-slice grouped bars), `13_fairness_metric_gaps.png` (3-subplot with threshold lines), `14_fairness_status.png` (one bar per slice colored by status).
+
+`DecisionAdvisor.build_fairness_block(features, X_test, y_test, y_pred_test, y_score_test)` is called per-applicant in STEP 15 and injects a `fairness` field into each decision report — applicant_groups, per-slice status, overall verdict, regulatory note. **Slicing uses the raw (unencoded) `df` columns, not the label-encoded `X_test`** — STEP 4's `LabelEncoder` would otherwise turn "M"/"F" into 0/1 and silently send everyone to UNKNOWN.
+
+Routing drift monitoring (M8.1e) lives in `src/monitoring/drift_detector.py::detect_routing_drift` — same PSI algorithm as feature drift, but over the 5-level categorical distribution `PROCEED / REVIEW_BORDERLINE / REVIEW_DENOISED / REJECT_FRAUD / REJECT_PACKAGING`. STEP 15 compares the current batch's routing distribution to a hardcoded M7 baseline; PSI=0.001 in the test run means M7→M8.1 didn't shift routing behavior.
 
 ### What is still a skeleton
 
@@ -97,13 +109,13 @@ Everything else listed in `docs/CausalCredit_完整实现计划书.md` §4.1–4
 - `.pre-commit-config.yaml` runs ruff (with `--fix`) and basic whitespace/YAML/TOML checks.
 - `src/run_pipeline.py` uses `matplotlib.use("Agg")` first thing — do not reorder imports or plots will fail in headless environments.
 - Chinese strings are expected to render in figures; the script sets `font.sans-serif = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]` and `axes.unicode_minus = False` for matplotlib.
-- Output figures use a 2-digit prefix naming convention (`01_roc_curve.png` … `14_denoising_effect.png`) — keep it when adding new charts so they slot into README/docs in the right order. M7 added the 12–14 prefix range for the three anti-fraud charts.
+- Output figures use a 2-digit prefix naming convention (`01_roc_curve.png` … `14_denoising_effect.png` / `14_fairness_status.png`) — keep it when adding new charts so they slot into README/docs in the right order. M7 took 12–14 (anti-fraud); M8.1 also took 12–14 (fairness). The number-prefix namespacing is by milestone, not by chart; the README lists them in pipeline order.
 - All paths in `configs/config.yaml` and `Dockerfile` are relative to repo root; running the pipeline from repo root is the safe assumption.
 - When adding modules under `src/`, the package is recognized by the `src/` layout in `pyproject.toml`; tests import as `from src.X import Y`, not `from X import Y`.
 
 ## Test layout
 
-133 tests across 19 files (~8s):
+164 tests across 24 files (~10s):
 
 | Test file | Cases | What it covers |
 |-----------|------:|----------------|
@@ -113,10 +125,15 @@ Everything else listed in `docs/CausalCredit_完整实现计划书.md` §4.1–4
 | `test_counterfactual.py` | 6 | DiCE NSGA-II + immutable/semi-mutable masks |
 | `test_shap.py` | 6 | TreeSHAP + 4-quadrant + subgroup SHAP |
 | `test_decision.py` | 5 | DecisionAdvisor + evidence chain |
+| `test_decision_fairness.py` | 3 | `build_fairness_block` + bias detection (M8.1c) |
 | `test_aggregation.py` | 16 | Bureau / prev / POS / INST / CC aggregators |
 | `test_train.py` | 7 | LightGBM GPU/Optuna toggle, `_resolve_device` |
 | `test_fraud_three_class.py` | 7 | Pseudo-labels + 4-class model + `fraud_score` |
 | `test_fraud_packaging.py` | 7 | Calibration + 4-quadrant + path integrity |
 | `test_fraud_denoising.py` | 6 | Consistency + inflation + denoised P |
 | `test_fraud_pipeline.py` | 5 | FraudGuard end-to-end + 5-level routing |
+| `test_fraud_config.py` | 7 | `FraudGuardConfig` + threshold override (M8.1d) |
+| `test_fairness.py` | 11 | 3 metrics + 4 slices (M8.1a) |
+| `test_fairness_visualize.py` | 4 | 3 fairness charts render (M8.1b) |
+| `test_routing_drift.py` | 6 | Routing PSI (M8.1e) |
 | Other (`test_loader`, `test_features`, `test_models`, `test_causal_graph`, `test_estimate`, `test_explain`, `test_drift`) | 47 | Earlier milestones |

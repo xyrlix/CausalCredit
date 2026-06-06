@@ -46,6 +46,61 @@
     },
     "denoised_mean_inflation": 0.14999999999999994
   },
+  "fairness": {
+    "verdict": "WARNING",
+    "violated_slices": [
+      "gender",
+      "age_group",
+      "income_group",
+      "education_group"
+    ],
+    "slices": {
+      "gender": {
+        "status": "WARNING",
+        "dp_gap": 0.00398268832687875,
+        "eo_gap": 0.011773363705236094,
+        "di_ratio": 0.5382519921428943,
+        "n_groups": 3
+      },
+      "age_group": {
+        "status": "WARNING",
+        "dp_gap": 0.009639699625418819,
+        "eo_gap": 0.04041095890410959,
+        "di_ratio": 0.08163578878940993,
+        "n_groups": 3
+      },
+      "income_group": {
+        "status": "WARNING",
+        "dp_gap": 0.0036135075505745445,
+        "eo_gap": 0.021310972685479768,
+        "di_ratio": 0.5112225146790849,
+        "n_groups": 3
+      },
+      "education_group": {
+        "status": "WARNING",
+        "dp_gap": 0.007725011809820213,
+        "eo_gap": 0.0499534595097735,
+        "di_ratio": 0.0,
+        "n_groups": 4
+      }
+    }
+  },
+  "routing_drift": {
+    "psi": 0.0009604420323773468,
+    "status": "no_drift",
+    "ref_dist": {
+      "PROCEED": 0.056,
+      "REVIEW_BORDERLINE": 0.906,
+      "REJECT_FRAUD": 0.029,
+      "REJECT_PACKAGING": 0.009
+    },
+    "cur_dist": {
+      "PROCEED": 0.052,
+      "REVIEW_BORDERLINE": 0.914,
+      "REJECT_FRAUD": 0.025,
+      "REJECT_PACKAGING": 0.009
+    }
+  },
   "decision_reports": [
     {
       "applicant_id": "HC_023041",

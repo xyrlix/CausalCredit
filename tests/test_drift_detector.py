@@ -164,4 +164,6 @@ def test_generate_drift_report_renders_markdown(reference_df, current_drifted):
     assert "# Drift Report" in md
     assert "## 1. Feature drift" in md
     assert "## 2. Prediction drift" in md
-    assert "## 3. Concept drift" in md
+    # Concept drift is now ## 4 because routing drift is ## 3 (M8.1e)
+    assert "## 3. Routing distribution drift" not in md  # not provided
+    assert "## 4. Concept drift" in md

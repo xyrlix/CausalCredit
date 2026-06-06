@@ -17,10 +17,11 @@
 | 4 | **SHAP × 因果四象限** | 模型说重要 ≠ 因果说重要 | `src/explain/shap_explain.py` | ✅ |
 | 5 | **因果引导决策建议** | 给信贷员 / 客户的可执行话术 | `src/explain/decision.py` + `evidence.py` | ✅ |
 | 6 | **反欺诈三件套** ⭐ | 主观欺诈 / 包装资质 / 养流水 | `src/fraud/` (4 模块) | ✅ M7 |
+| 7 | **公平性审计 (HKMA / EU AI Act)** ⭐ | 模型对性别/年龄/收入/教育切片是否合规？ | `src/fairness/` (3 模块) | ✅ M8.1 |
 
 ---
 
-## 📊 进展看板（8 个里程碑全部完成）
+## 📊 进展看板（9 个里程碑全部完成：M0-M7 + M8.1）
 
 | # | 里程碑 | 关键产出 | 累计效果 | Commit |
 |:-:|--------|----------|---------|--------|
@@ -33,9 +34,10 @@
 | **M5+** | **CPU 优化** | 多表聚合缓存 (65s→2s) + L1 特征预筛选 | **耗时 -25% (245s → 185s)** | `bca8c96` |
 | **M6** | **GPU LightGBM + Optuna** | 2 个可选杠杆 (默认关闭, 实测 Home Credit 上不显著) | 接口预留 | `7d496b6` |
 | **M7** | **反欺诈三件套** ⭐ | 三分类子模型 + 包装资质 + 养流水去噪, 14 步 / 14 图 / 25 新测试 | **5 维 routing** | `7015282` |
-| 📝 | **文档 v3** | CLAUDE.md / docs/ M7 实现记录 | 需求↔实现可追溯 | `c0ac8bc` |
+| **M8.1** | **公平性审计 + 反欺诈升级** ⭐ | 3 项公平性指标 (DP/EO/DI) + 4 切片 + 3 张图 + FraudGuardConfig (YAML) + 路由 PSI, 15 步 / 17 图 / 31 新测试 | **HKMA / EU AI Act 合规** | (M8.1) |
+| 📝 | **文档 v3** | CLAUDE.md / docs/ M7 + M8.1 实现记录 | 需求↔实现可追溯 | `c0ac8bc` |
 
-**总投入**: 19 个测试文件 / **133 个测试用例** (全跑 8.0s) / **569 行反欺诈代码** / **14 张图表** / **3 份决策报告** / **12 份设计文档**
+**总投入**: 24 个测试文件 / **164 个测试用例** (全跑 10.0s) / **569 行反欺诈代码 + 432 行公平性代码** / **17 张图表** / **3 份决策报告 + 公平性字段** / **13 份设计文档**
 
 ---
 
@@ -50,7 +52,7 @@
 ### 一键运行
 
 ```bash
-# 端到端 pipeline (14 步, 含 STEP 3.5 多表 + STEP 14 反欺诈, ~195 秒 CPU)
+# 端到端 pipeline (15 步, 含 STEP 3.5 多表 + STEP 14 反欺诈 + STEP 15 公平性, ~212 秒 CPU)
 /home/tony/anaconda3/envs/ldq_cc/bin/python -m src.run_pipeline
 
 # FastAPI 后端
@@ -59,7 +61,7 @@
 # Streamlit 前端
 /home/tony/anaconda3/envs/ldq_cc/bin/streamlit run src/frontend/app.py
 
-# 单元测试 (133 用例, ~8 秒)
+# 单元测试 (164 用例, ~10 秒)
 /home/tony/anaconda3/envs/ldq_cc/bin/python -m pytest tests/ -v --tb=short
 ```
 
@@ -93,7 +95,7 @@
 
 ---
 
-## 🔬 14 步 Pipeline 详解
+## 🔬 15 步 Pipeline 详解
 
 ```
 STEP 1-2   加载 + 校验       Home Credit 307K × 122 → DataFrame + 校验报告
@@ -111,12 +113,13 @@ STEP 11    反驳验证          4 类 refuter (placebo / random cause / data su
 STEP 12    SHAP 四象限       TreeSHAP + 4 象限 (TRUSTED/UNTRUSTED/MASKED/NEGLIGIBLE)
 STEP 13    反事实 + 决策     DiCE NSGA-II + 决策 JSON 报告 (中英模板)
 STEP 14    反欺诈三件套 ⭐   FraudGuard (3 分类 + 包装资质 + 养流水去噪)
+STEP 15    公平性审计 ⭐     3 指标 (DP/EO/DI) × 4 切片 + 路由漂移 PSI
 ```
 
 **关键产出**:
-- `output/figures/14 PNG` — ROC / 特征重要性 / DAG / CATE / SHAP / 反欺诈 等
-- `output/decision_reports/3 JSON + 3 MD` — 完整决策报告 (含 fraud 字段)
-- `output/decision_reports/pipeline_summary.json` — 主指标 + routing 分布
+- `output/figures/17 PNG` — ROC / 特征重要性 / DAG / CATE / SHAP / 反欺诈 / 公平性 等
+- `output/decision_reports/3 JSON + 3 MD` — 完整决策报告 (含 fraud + fairness 字段)
+- `output/decision_reports/pipeline_summary.json` — 主指标 + routing 分布 + fairness verdict
 
 ---
 
@@ -164,6 +167,66 @@ STEP 14    反欺诈三件套 ⭐   FraudGuard (3 分类 + 包装资质 + 养流
 
 ---
 
+## ⚖️ 公平性审计 (M8.1 重点)
+
+**问题**: HKMA / EU AI Act / EEOC 80% 规则都要求对受保护属性做群体公平性审计. 一个只看 AUC 0.78 的模型可能"对老年/低教育群体系统性拒绝", 这在合规上不可接受.
+
+**做法**: `src/fairness/` 3 个模块在 STEP 15 对 4 个默认切片算 3 项标准指标:
+
+| 切片 | 来源 | 分组 |
+|---|---|---|
+| `gender` | `CODE_GENDER` | M / F / UNKNOWN |
+| `age_group` | `DAYS_BIRTH` | young (<35) / mid (35-60) / old (≥60) |
+| `income_group` | `AMT_INCOME_TOTAL` | low / mid / high (样本 33/66 分位) |
+| `education_group` | `NAME_EDUCATION_TYPE` | 5 个标准教育层级 |
+
+| 指标 | 公式 | 阈值 (合规) |
+|---|---|---|
+| Demographic Parity gap | max sel_rate − min sel_rate | < 0.05 |
+| Equal Opportunity gap | max TPR − min TPR | < 0.05 |
+| Disparate Impact ratio | min sel_rate / max sel_rate | ≥ 0.80 (EEOC 80% 规则) |
+
+**实测 (Home Credit 50K 测试集)**:
+
+```
+gender              status=WARNING  DP=0.004  EO=0.012  DI=0.538
+age_group           status=WARNING  DP=0.010  EO=0.040  DI=0.082
+income_group        status=WARNING  DP=0.004  EO=0.021  DI=0.511
+education_group     status=WARNING  DP=0.008  EO=0.050  DI=0.000
+```
+
+**关键解读**:
+- 4 个切片都触发 WARNING, **主要因 DI 远低于 0.80** (数据本身的结构性偏差)
+- **EO gap 全部 < 0.05** → 模型**没有**"对真正会违约的群体漏判"的歧视
+- 真正不均衡的是"有多少比例被拒绝" (selection_rate) — 模型整体更保守
+- 路由分布与 M7 baseline PSI=0.001 → M7→M8.1 升级**无回归**
+
+**3 张新图**:
+- `12_fairness_group_rates.png` — per-slice per-group TPR/FPR 柱状图
+- `13_fairness_metric_gaps.png` — DP/EO/DI 子图, 阈值红线
+- `14_fairness_status.png` — slice 状态仪表板 (FAIR/WARNING/UNFAIR 配色)
+
+**决策报告新增字段** (`build_fairness_block`):
+
+```json
+{
+  "fairness": {
+    "applicant_groups": {"gender": "F", "age_group": "mid", "income_group": "low", "education_group": "secondary"},
+    "verdict": "WARNING",
+    "violated_slices": ["gender", "age_group", "income_group", "education_group"],
+    "regulatory_note": "One or more slices are WARNING. Model output may be biased; request additional documentation."
+  }
+}
+```
+
+**反欺诈路由升级 (M8.1d+e)**:
+- `FraudGuardConfig` 数据类 + `configs/config.yaml::fraud_guard` — 同一份代码可跑多个产品 (现金贷 / 学生贷) 不同阈值
+- `DriftDetector::detect_routing_drift` — 路由分布 PSI 监控, M7→M8.1 实测 PSI=0.001
+
+> 完整需求↔实现追溯见 [`docs/CausalCredit_M8.1_公平性与反欺诈升级实现记录.md`](docs/CausalCredit_M8.1_公平性与反欺诈升级实现记录.md)
+
+---
+
 ## 📁 项目结构
 
 ```
@@ -193,7 +256,7 @@ CausalCredit/
 
 ```
 output/
-├── figures/                              # 14 张 PNG
+├── figures/                              # 17 张 PNG
 │   ├── 01_roc_curve.png                  # ROC + PR
 │   ├── 02_feature_importance.png         # LightGBM gain
 │   ├── 03_confusion_matrix.png
@@ -207,13 +270,16 @@ output/
 │   ├── 11_counterfactual_scenarios.png
 │   ├── 12_fraud_score_routing.png        # M7 fraud_score + routing 饼图
 │   ├── 13_packaging_scatter.png          # M7 path_integrity × packaging_score
-│   └── 14_denoising_effect.png           # M7 P(default) vs denoised P
+│   ├── 14_denoising_effect.png           # M7 P(default) vs denoised P
+│   ├── 12_fairness_group_rates.png       # M8.1 per-slice per-group TPR/FPR
+│   ├── 13_fairness_metric_gaps.png       # M8.1 DP/EO/DI 带阈值线
+│   └── 14_fairness_status.png            # M8.1 slice 状态仪表板
 ├── decision_reports/
 │   ├── HC_006355.json                    # 高风险 (P=89%, E)
 │   ├── HC_023041.json                    # 低风险 (P=0.3%, A)
 │   ├── HC_036837.json                    # 中风险 (P=4.9%, A)
 │   ├── *.md                              # 同 3 份的可读报告
-│   ├── pipeline_summary.json             # 主指标 + 反欺诈 routing
+│   ├── pipeline_summary.json             # 主指标 + 反欺诈 routing + 公平性 verdict
 │   └── pipeline_timings.json             # per-step 耗时
 ├── demo_m1/                              # M1 5 个创新点独立图表
 ├── cache/                                # 多表聚合 parquet 缓存 (M5+)
@@ -309,11 +375,12 @@ output/
 
 | 文档 | 用途 |
 |------|------|
-| [`PROGRESS.md`](PROGRESS.md) | 8 个里程碑详细记录 (设计 / 实现 / 耗时 / 迭代) |
+| [`PROGRESS.md`](PROGRESS.md) | 9 个里程碑详细记录 (M0-M7 + M8.1) |
 | [`BENCHMARKS.md`](BENCHMARKS.md) | 性能基准 + 反欺诈 routing 分布 + 单测覆盖 |
 | [`CLAUDE.md`](CLAUDE.md) | 给 Claude Code 的协作指引 (架构 / 命令 / 约定) |
-| [`docs/`](docs/) | 12 份原始分析文档 (需求 / 设计 / 验证标准) |
+| [`docs/`](docs/) | 13 份原始分析文档 (需求 / 设计 / 验证标准) |
 | [`docs/CausalCredit_M7_反欺诈三件套实现记录.md`](docs/CausalCredit_M7_反欺诈三件套实现记录.md) | M7 需求↔实现追溯 |
+| [`docs/CausalCredit_M8.1_公平性与反欺诈升级实现记录.md`](docs/CausalCredit_M8.1_公平性与反欺诈升级实现记录.md) | M8.1 公平性审计 + FraudGuardConfig + 路由 PSI |
 
 ---
 

@@ -26,6 +26,12 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
+from src.fairness.slicing import build_default_slices, slice_dataset
+from src.fairness.metrics import (
+    FairnessSummary,
+    summarize_fairness,
+)
+
 
 # ===========================================================================
 # Helpers
@@ -107,6 +113,7 @@ class DecisionAdvisor:
         cf_results: Optional[Dict] = None,
         causal_effect_summary: Optional[Dict] = None,
         four_quadrant: Optional[Dict] = None,
+        fairness_block: Optional[Dict] = None,
     ) -> Dict:
         """Generate a complete decision report dict.
 
@@ -162,6 +169,107 @@ class DecisionAdvisor:
             "cate_insights": cate_insights,
             "counterfactual_recommendations": cf_recommendations,
             "causal_narrative": narrative,
+            "fairness": fairness_block,
+        }
+
+    # ------------------------------------------------------------------ fairness helper
+    def build_fairness_block(
+        self,
+        features: Dict[str, float],
+        X_test: pd.DataFrame,
+        y_test: np.ndarray,
+        y_pred_test: np.ndarray,
+        y_score_test: np.ndarray,
+        n_test: Optional[int] = None,
+    ) -> Dict:
+        """Compute the fairness block to embed in a decision report.
+
+        Re-runs the three standard group-fairness metrics on the
+        held-out test set against the four default slices
+        (gender / age / income / education), then identifies the
+        group this applicant belongs to in each slice.  The block
+        is what the regulator-facing report shows: per-slice
+        status + which protected group this applicant is in +
+        overall verdict.
+
+        Args:
+            features: this applicant's raw features.
+            X_test: the full test set feature matrix.
+            y_test, y_pred_test, y_score_test: test-set arrays.
+            n_test: optional cap on test-set rows for speed
+                (default: full X_test).
+
+        Returns:
+            A dict ready to drop into the decision report's
+            ``fairness`` field.
+        """
+        if n_test is not None and n_test < len(X_test):
+            X_eval = X_test.iloc[:n_test].reset_index(drop=True)
+            y_true_e = np.asarray(y_test)[:n_test]
+            y_pred_e = np.asarray(y_pred_test)[:n_test]
+            y_score_e = np.asarray(y_score_test)[:n_test]
+        else:
+            X_eval = X_test.reset_index(drop=True)
+            y_true_e = np.asarray(y_test)
+            y_pred_e = np.asarray(y_pred_test)
+            y_score_e = np.asarray(y_score_test)
+
+        # 1. Compute per-slice summaries on the held-out test set
+        slices = build_default_slices(X_eval)
+        summaries: Dict[str, FairnessSummary] = {}
+        for name, groups in slices.items():
+            summaries[name] = summarize_fairness(
+                name, y_true_e, y_pred_e, y_score_e, groups
+            )
+
+        # 2. Identify this applicant's group in each slice
+        applicant_row = pd.DataFrame([features])
+        applicant_groups = build_default_slices(applicant_row)
+
+        # 3. Compose the verdict
+        slice_blocks = []
+        violated = []
+        for name, summ in summaries.items():
+            slice_blocks.append({
+                "slice": name,
+                "status": summ.status,
+                "dp_gap": round(summ.dp_gap, 4),
+                "eo_gap": round(summ.eo_gap, 4),
+                "di_ratio": round(summ.di_ratio, 4),
+                "n_groups": summ.n_groups,
+                "n_total": summ.n_total,
+                "violated_metrics": summ.violated_metrics,
+            })
+            if summ.status == "UNFAIR":
+                violated.append(name)
+            elif summ.status == "WARNING" and name not in violated:
+                violated.append(name)
+
+        if any(s["status"] == "UNFAIR" for s in slice_blocks):
+            verdict = "UNFAIR"
+            reg_note = (
+                "At least one protected slice is UNFAIR under HKMA / EU AI Act guidance. "
+                "Decision must be reviewed by a human officer before issuance."
+            )
+        elif any(s["status"] == "WARNING" for s in slice_blocks):
+            verdict = "WARNING"
+            reg_note = (
+                "One or more slices are WARNING. Model output may be biased; "
+                "request additional documentation from the applicant."
+            )
+        else:
+            verdict = "FAIR"
+            reg_note = "All slices within HKMA / EU AI Act fairness band."
+
+        return {
+            "applicant_groups": {
+                name: (groups[0] if len(groups) else "UNKNOWN")
+                for name, groups in applicant_groups.items()
+            },
+            "slice_summaries": slice_blocks,
+            "verdict": verdict,
+            "violated_slices": violated,
+            "regulatory_note": reg_note,
         }
 
     # ------------------------------------------------------------------ suggestions

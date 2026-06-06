@@ -1,11 +1,11 @@
 # CausalCredit 开发进展记录
 
 > **最后更新**: 2026-06-06 | **环境**: CPU (Python 3.11, `ldq_cc` conda env)  
-> **状态**: 8 个里程碑全部完成 ✅ (M5 8 表 JOIN, M5+ CPU 优化, M6 文档, M7 反欺诈三件套)
+> **状态**: 9 个里程碑全部完成 ✅ (M0-M7 + M8.1 公平性 + 反欺诈升级)
 
 ---
 
-## 总览：7 个里程碑全部交付
+## 总览：8 个里程碑全部交付 (M0-M7 + M8.1)
 
 | 里程碑 | 目标 | 状态 | 关键产出 |
 |:---:|------|:---:|------|
@@ -18,6 +18,7 @@
 | **M5+** | **CPU 优化** | ✅ | **多表聚合缓存 (65s→2s) + L1 特征预筛选 (-16% 训练耗时), 总耗时 245s→185s** |
 | **M6** | **GPU LightGBM + Optuna** | ✅ | **LightGBM GPU build 接入 (默认关闭) + Optuna 9 维超参搜索 (默认关闭), 2 个可选杠杆** |
 | **M7** | **反欺诈三件套** | ✅ | **三分类子模型 (fraudulent/non_malicious/systemic) + 包装资质因果一致性检测 + 养流水因果去噪评分, 14 步 / 14 图 / 25 新测试** |
+| **M8.1** | **公平性审计 + 反欺诈升级** | ✅ | **3 项公平性指标 (DP/EO/DI) + 4 个默认切片 + 3 张公平性图 + FraudGuardConfig 数据类 (YAML 配置) + 路由分布 PSI 监控, 15 步 / 17 图 / 31 新测试** |
 
 ---
 
@@ -30,6 +31,7 @@
 | 3 | `6f17d9f` | 完整端到端流水线（可运行） |
 | 4 | `76b3ff3` | 自动生成 5 张可视化图表 |
 | 5 | `815baef` | 开发进展记录 - CPU 环境完成 |
+| 6 | (M8.1) | **公平性审计 + 反欺诈升级 (3 文件 / 31 测试 / 3 张图 / STEP 15)** |
 
 > M0-M4 完整代码在 main 分支。后续每个里程碑均经 `python -m src.run_pipeline` 验证 + 单测全过。
 
@@ -600,15 +602,75 @@ PROCEED             干净
 
 ---
 
+## M8.1 — 公平性审计 + 反欺诈升级 ✅
+
+**目标**: 把"成品打磨"阶段的两件 M7 留尾巴的事一次性收掉。详见 `docs/CausalCredit_M8.1_公平性与反欺诈升级实现记录.md`。
+
+### 子任务分解
+
+| 子任务 | 文件 | 测试 |
+|---|---|---|
+| M8.1a 公平性指标 + 切片 | `src/fairness/{__init__,metrics,slicing}.py` | 11 |
+| M8.1b 公平性可视化 | `src/fairness/visualize.py` | 4 |
+| M8.1c 公平性决策 JSON 扩展 | `src/explain/decision.py::build_fairness_block` | 3 |
+| M8.1d 反欺诈阈值可配置 | `src/fraud/pipeline.py::FraudGuardConfig` + `configs/config.yaml` | 7 |
+| M8.1e 反欺诈路由分布监控 | `src/monitoring/drift_detector.py::detect_routing_drift` | 6 |
+| M8.1f 集成 + 测试 + 文档 | `src/run_pipeline.py` STEP 15 | — |
+
+**测试增量**: 133 → 164 (+31)
+
+### 关键产出
+
+| 项目 | 数值 |
+|---|---|
+| Pipeline 总步数 | 14 → **15** (+FAIRNESS) |
+| 图表总数 | 14 → **17** (+3 公平性图) |
+| Pipeline 总耗时 | 195s → **212s** (公平性切片计算 1.03s) |
+
+### STEP 15 实测输出 (Home Credit 30K 测试集)
+
+```
+  gender              status=WARNING  DP=0.004  EO=0.012  DI=0.538  (n_groups=3, n=50000)
+  age_group           status=WARNING  DP=0.010  EO=0.040  DI=0.082  (n_groups=3, n=50000)
+  income_group        status=WARNING  DP=0.004  EO=0.021  DI=0.511  (n_groups=3, n=50000)
+  education_group     status=WARNING  DP=0.008  EO=0.050  DI=0.000  (n_groups=4, n=50000)
+
+  Routing drift vs M7 baseline: PSI=0.0010  status=no_drift
+```
+
+**关键发现**:
+- 模型在 4 个维度都触发 WARNING (主要因 DI 低于 0.80 规则), 但**EO gap 全部 < 0.05** — 模型没有"对真正会违约的群体漏判" 的歧视, 只是整体 selection_rate 偏低.
+- 路由分布与 M7 完全对齐 (PSI=0.001), 升级没有引入回归.
+
+### 决策报告样例 (M8.1 新增字段)
+
+```json
+{
+  "applicant_id": "HC_006355",
+  "score": 432, "risk_grade": "D", "default_probability": 0.187,
+  "fairness": {
+    "applicant_groups": {"gender": "F", "age_group": "mid", "income_group": "low", "education_group": "secondary"},
+    "verdict": "WARNING",
+    "violated_slices": ["gender", "age_group", "income_group", "education_group"],
+    "regulatory_note": "One or more slices are WARNING. Model output may be biased; request additional documentation."
+  }
+}
+```
+
+---
+
 ## 后续迭代方向（未做）
 
 - ~~8 表 JOIN（bureau / previous_application / POS / installments / credit_card）→ 多表因果特征~~ ✅ M5 完成
 - ~~GPU 加速（LightGBM GPU build）~~ ✅ M6 完成（接入, 默认关闭）
 - ~~Optuna 超参调优~~ ✅ M6 完成（接入, 默认关闭, 实测 Home Credit 上不显著）
 - ~~反欺诈三件套（三分类 + 包装资质 + 养流水去噪）~~ ✅ M7 完成
+- ~~公平性审计 + 反欺诈阈值可配置 + 路由漂移监控~~ ✅ M8.1 完成
+- **M8.2**: 因果叙事深化 (讲好"为什么高", 群组级 confounder 归因)
+- **M8.3**: 完整服务化 (FastAPI 端点 + Streamlit 4 页填实 + PSI 后台任务)
+- **M8.4**: 多语言 + 港式本地化 (粤语 / 繁体 / 香港场景)
 - 实时推理服务（gRPC / ONNX Runtime）
 - K8s / Helm / Terraform 部署
-- 多语言决策建议扩展（粤语 / 繁体）
 - **多表聚合 polars 改写**: 当前 pandas 单线程, ~27s 可降到 ~5s
 
 ---
