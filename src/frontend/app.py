@@ -39,6 +39,7 @@ from src.frontend.pages import (  # noqa: E402
     causal_visualization,
     counterfactual_simulator,
     decision_panel,
+    interest_rate_optimizer,
     score_dashboard,
 )
 
@@ -166,7 +167,7 @@ preset_key = st.sidebar.selectbox(
 preset_name = preset_labels[preset_key]
 st.session_state["preset_name"] = preset_name
 
-page_keys = ["app.nav_score", "app.nav_causal", "app.nav_cf", "app.nav_decision"]
+page_keys = ["app.nav_score", "app.nav_causal", "app.nav_cf", "app.nav_decision", "app.nav_pricing"]
 page = st.sidebar.radio(
     t("app.navigation", lang),
     options=page_keys,
@@ -199,3 +200,5 @@ elif page == "app.nav_cf":
     counterfactual_simulator.render(context)
 elif page == "app.nav_decision":
     decision_panel.render(context)
+elif page == "app.nav_pricing":
+    interest_rate_optimizer.render(context)

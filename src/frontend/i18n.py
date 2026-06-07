@@ -44,6 +44,7 @@ _STRINGS: Dict[str, Dict[str, str]] = {
         "app.nav_causal": "🔬 Causal Visualization",
         "app.nav_cf": "🔄 Counterfactual Simulator",
         "app.nav_decision": "💡 Decision Advisory Panel",
+        "app.nav_pricing": "💰 Interest Rate Optimizer",
         "app.preset_label": "Preset Applicant",
         "app.about_heading": "**About**",
         "app.about_body": (
@@ -180,6 +181,43 @@ _STRINGS: Dict[str, Dict[str, str]] = {
         "preset.mid_career": "Mid-Career (40y, mortgage holder)",
         "preset.thin_credit": "Thin Credit (25y, no history)",
         "preset.high_risk": "High-Risk (30y, low income, high debt)",
+
+        # Interest Rate Optimizer (M8.5g)
+        "pricing.title": "💰 Interest Rate Optimizer",
+        "pricing.caption": (
+            "Counterfactual sweep across the rate grid classifies "
+            "applicants into sleeping-dogs / rate-sensitive / neutral, "
+            "and recommends a profit-maximizing rate."
+        ),
+        "pricing.segments_header": "Customer segments",
+        "pricing.segments_caption": (
+            "**Sleeping dogs**: low-risk, under-priced — a 50bps rate "
+            "cut grows the book without inflating loss. "
+            "**Rate-sensitive**: P(default) moves >0.5pp per 1pp rate — "
+            "price carefully. **Neutral**: small response, optimize for margin."
+        ),
+        "pricing.grid_header": "Rate × P(default) curve",
+        "pricing.grid_caption": (
+            "P(default) predicted for each target rate, holding other "
+            "features fixed. Curve steepness = elasticity."
+        ),
+        "pricing.elasticity_header": "Elasticity",
+        "pricing.elasticity_caption": (
+            "ΔP per 1pp rate change around the base point. "
+            "|e| ≥ 0.005 → rate_sensitive; |e| < 0.005 and P<5% → sleeping_dog."
+        ),
+        "pricing.recommendation_header": "Recommended rate",
+        "pricing.recommendation_caption": (
+            "Argmax of expected profit on the grid, with "
+            "LGD={lgd:.0%} and cost-of-funds={cof:.1%}."
+        ),
+        "pricing.expected_profit_label": "Expected profit / year",
+        "pricing.profit_delta_label": "Δ vs base",
+        "pricing.reasons_header": "Why this segment?",
+        "pricing.base_label": "Base rate",
+        "pricing.base_pd_label": "Base P(default)",
+        "pricing.recommended_label": "Recommended",
+        "pricing.spinner": "Running rate sweep…",
     },
 
     "zh": {
@@ -192,6 +230,7 @@ _STRINGS: Dict[str, Dict[str, str]] = {
         "app.nav_causal": "🔬 因果可视化",
         "app.nav_cf": "🔄 反事实模拟器",
         "app.nav_decision": "💡 决策建议面板",
+        "app.nav_pricing": "💰 利率优化器",
         "app.preset_label": "申请人预设",
         "app.about_heading": "**关于**",
         "app.about_body": (
@@ -322,6 +361,39 @@ _STRINGS: Dict[str, Dict[str, str]] = {
         "preset.mid_career": "事业中期（40 岁，房贷持有者）",
         "preset.thin_credit": "薄信用（25 岁，无历史）",
         "preset.high_risk": "高风险（30 岁，低收入，高负债）",
+
+        # Interest Rate Optimizer (M8.5g)
+        "pricing.title": "💰 利率优化器",
+        "pricing.caption": (
+            "在利率网格上做反事实扫描，将申请人分类为沉睡客户 / 利率敏感 / 中性，"
+            "并推荐利润最大化的利率。"
+        ),
+        "pricing.segments_header": "客户分群",
+        "pricing.segments_caption": (
+            "**沉睡客户**：低风险、定价偏低 — 50bps 的降息可在不增加损失的前提下扩大客户群。"
+            "**利率敏感**：P(违约) 每 1pp 利率变化移动 >0.5pp — 需谨慎定价。"
+            "**中性**：对利率反应小，以利润率为主要考量。"
+        ),
+        "pricing.grid_header": "利率 × P(违约) 曲线",
+        "pricing.grid_caption": (
+            "对每个目标利率（其他特征保持不变）预测 P(违约)。曲线斜率即为弹性。"
+        ),
+        "pricing.elasticity_header": "弹性",
+        "pricing.elasticity_caption": (
+            "在基点附近，利率每变化 1pp 引起的 P(违约) 变化。"
+            "|e| ≥ 0.005 → rate_sensitive；|e| < 0.005 且 P<5% → sleeping_dog。"
+        ),
+        "pricing.recommendation_header": "推荐利率",
+        "pricing.recommendation_caption": (
+            "网格上期望利润最大的利率，其中 LGD={lgd:.0%}、资金成本={cof:.1%}。"
+        ),
+        "pricing.expected_profit_label": "年化期望利润",
+        "pricing.profit_delta_label": "相对基点 Δ",
+        "pricing.reasons_header": "为何分到此群？",
+        "pricing.base_label": "基点利率",
+        "pricing.base_pd_label": "基点 P(违约)",
+        "pricing.recommended_label": "推荐",
+        "pricing.spinner": "正在运行利率扫描…",
     },
 
     "zh-HK": {
@@ -334,6 +406,7 @@ _STRINGS: Dict[str, Dict[str, str]] = {
         "app.nav_causal": "🔬 因果可視化",
         "app.nav_cf": "🔄 反事實模擬器",
         "app.nav_decision": "💡 決策建議面板",
+        "app.nav_pricing": "💰 利率優化器",
         "app.preset_label": "申請人預設",
         "app.about_heading": "**關於**",
         "app.about_body": (
@@ -464,6 +537,39 @@ _STRINGS: Dict[str, Dict[str, str]] = {
         "preset.mid_career": "事業中期（40 歲，按揭持有者）",
         "preset.thin_credit": "薄信貸（25 歲，無歷史）",
         "preset.high_risk": "高風險（30 歲，低收入，高負債）",
+
+        # Interest Rate Optimizer (M8.5g)
+        "pricing.title": "💰 利率優化器",
+        "pricing.caption": (
+            "喺利率網格上做反事實掃描，將申請人分類做沉睡客戶 / 利率敏感 / 中性，"
+            "並推薦利潤最大化嘅利率。"
+        ),
+        "pricing.segments_header": "客戶分群",
+        "pricing.segments_caption": (
+            "**沉睡客戶**：低風險、定價偏低 — 50bps 嘅減息可以喺唔增加損失嘅前提下擴大客戶群。"
+            "**利率敏感**：P(違約) 每 1pp 利率變化移動 >0.5pp — 要謹慎定價。"
+            "**中性**：對利率反應細，以利潤率為主要考量。"
+        ),
+        "pricing.grid_header": "利率 × P(違約) 曲線",
+        "pricing.grid_caption": (
+            "對每個目標利率（其他特徵保持不變）預測 P(違約)。曲線斜率就係彈性。"
+        ),
+        "pricing.elasticity_header": "彈性",
+        "pricing.elasticity_caption": (
+            "喺基點附近，利率每變化 1pp 引起嘅 P(違約) 變化。"
+            "|e| ≥ 0.005 → rate_sensitive；|e| < 0.005 同埋 P<5% → sleeping_dog。"
+        ),
+        "pricing.recommendation_header": "推薦利率",
+        "pricing.recommendation_caption": (
+            "網格上期望利潤最大嘅利率，其中 LGD={lgd:.0%}、資金成本={cof:.1%}。"
+        ),
+        "pricing.expected_profit_label": "年化期望利潤",
+        "pricing.profit_delta_label": "相對基點 Δ",
+        "pricing.reasons_header": "點解分到呢個群？",
+        "pricing.base_label": "基點利率",
+        "pricing.base_pd_label": "基點 P(違約)",
+        "pricing.recommended_label": "推薦",
+        "pricing.spinner": "運行緊利率掃描…",
     },
 }
 
