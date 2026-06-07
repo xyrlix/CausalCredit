@@ -93,3 +93,43 @@ def test_routing_drift_handles_unseen_categories():
     assert result["psi"] > 0.05
     assert "REVIEW_DENOISED" in result["cur_dist"]
     assert result["cur_dist"]["REVIEW_DENOISED"] > 0
+
+
+# ---------------------------------------------------------------------------
+# M8.1a — baseline persistence to routing_baseline.json
+# ---------------------------------------------------------------------------
+
+
+def test_routing_baseline_file_exists_with_5_categories():
+    """M8.1a persisted baseline — the on-disk file the pipeline now reads."""
+    import json
+    from pathlib import Path
+    path = Path("output/decision_reports/routing_baseline.json")
+    assert path.exists(), f"Missing {path} — STEP 15 should have written it on first run"
+    with open(path) as f:
+        doc = json.load(f)
+    cats = ["PROCEED", "REVIEW_BORDERLINE", "REVIEW_DENOISED", "REJECT_FRAUD", "REJECT_PACKAGING"]
+    for c in cats:
+        key = f"M7_{c}_FRAC"
+        assert key in doc, f"Missing key {key}"
+        v = float(doc[key])
+        assert 0.0 <= v <= 1.0, f"{key}={v} out of [0, 1]"
+    # Sum to ~1.0
+    total = sum(float(doc[f"M7_{c}_FRAC"]) for c in cats)
+    assert abs(total - 1.0) < 0.01, f"Baseline fractions sum to {total}, expected ~1.0"
+
+
+def test_run_pipeline_uses_persisted_baseline(tmp_path):
+    """When routing_baseline.json exists, the pipeline reads it (not hardcoded)."""
+    import json
+    # Replicate the same parsing logic that run_pipeline uses
+    with open("output/decision_reports/routing_baseline.json") as f:
+        doc = json.load(f)
+    baseline = {k.replace("M7_", "").replace("_FRAC", ""): float(v)
+                for k, v in doc.items() if k.startswith("M7_") and "_FRAC" in k}
+    assert "PROCEED" in baseline
+    assert "REJECT_FRAUD" in baseline
+    assert "REVIEW_DENOISED" in baseline  # the previously-missing 5th category
+    # PROCEED should be small (~5%), REVIEW_BORDERLINE large (~90%)
+    assert 0.0 <= baseline["PROCEED"] <= 0.20
+    assert 0.50 <= baseline["REVIEW_BORDERLINE"] <= 1.00

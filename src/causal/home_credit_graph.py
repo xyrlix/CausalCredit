@@ -9,7 +9,8 @@ Treatments: AMT_CREDIT, AMT_ANNUITY, DAYS_EMPLOYED
 Outcome:     TARGET
 Confounders: AMT_INCOME_TOTAL, NAME_EDUCATION_TYPE, OCCUPATION_TYPE,
              REGION_RATING_CLIENT, DAYS_BIRTH, CNT_CHILDREN,
-             NAME_FAMILY_STATUS, EXT_SOURCE_2
+             NAME_FAMILY_STATUS, EXT_SOURCE_1, EXT_SOURCE_2, EXT_SOURCE_3,
+             BUREAU_TYPE_MICROLOAN_FRAC
 Mediators:   AMT_GOODS_PRICE, NAME_HOUSING_TYPE
 Sensitive:   CODE_GENDER
 """
@@ -42,6 +43,9 @@ class HomeCreditCausalGraph:
             "CNT_CHILDREN": {"type": "confounder", "label": "Num Children"},
             "NAME_FAMILY_STATUS": {"type": "confounder", "label": "Family Status"},
             "EXT_SOURCE_2": {"type": "confounder", "label": "EXT Source 2"},
+            "EXT_SOURCE_1": {"type": "confounder", "label": "EXT Source 1"},
+            "EXT_SOURCE_3": {"type": "confounder", "label": "EXT Source 3"},
+            "BUREAU_TYPE_MICROLOAN_FRAC": {"type": "confounder", "label": "Bureau Micro-loan Frac"},
             # Mediators
             "AMT_GOODS_PRICE": {"type": "mediator", "label": "Goods Price"},
             "NAME_HOUSING_TYPE": {"type": "mediator", "label": "Housing Type"},
@@ -79,8 +83,12 @@ class HomeCreditCausalGraph:
             # Family status -> housing, default
             ("NAME_FAMILY_STATUS", "NAME_HOUSING_TYPE"),
             ("NAME_FAMILY_STATUS", "TARGET"),
-            # EXT_SOURCE_2 -> default (external risk score)
+            # EXT_SOURCE_* -> default (external risk scores, M8.2g)
+            ("EXT_SOURCE_1", "TARGET"),
             ("EXT_SOURCE_2", "TARGET"),
+            ("EXT_SOURCE_3", "TARGET"),
+            # Bureau micro-loan fraction -> default (multi-institution exposure)
+            ("BUREAU_TYPE_MICROLOAN_FRAC", "TARGET"),
             # Gender -> employment, default (for fairness check)
             ("CODE_GENDER", "DAYS_EMPLOYED"),
             ("CODE_GENDER", "OCCUPATION_TYPE"),

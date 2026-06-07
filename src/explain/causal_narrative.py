@@ -348,51 +348,123 @@ class CausalNarrative:
 
     # ------------------------------------------------------------------ 6. rendering
     @staticmethod
-    def render_markdown(narrative: Dict) -> str:
-        """Render the full narrative dict as a human-readable markdown section."""
-        lines: List[str] = ["## 因果叙事 (Causal Narrative — M8.2)\n"]
+    def render_markdown(narrative: Dict, language: str = "zh") -> str:
+        """Render the full narrative dict as a human-readable markdown section.
+
+        Args:
+            narrative: dict from `build_full_narrative`.
+            language: one of ``"zh"`` (简体中文, 默认), ``"zh-HK"`` (繁体 / 港式本地化),
+                ``"en"`` (English).  The narrative prose text from the model itself
+                is left untouched (still in English as produced by the upstream
+                `*_narrative` methods); only the **section headings and table
+                column labels** are translated.
+        """
+        labels = _NARRATIVE_LABELS.get(language, _NARRATIVE_LABELS["zh"])
+        lines: List[str] = [f"## {labels['title']} (Causal Narrative — M8.2)\n"]
         # Model level
         m = narrative.get("model_level", {})
-        lines.append("### 1. 模型层面 (Model-level)\n")
+        lines.append(f"### 1. {labels['model']}\n")
         lines.append(m.get("narrative", "_n/a_"))
         if m.get("top_features"):
             lines.append("")
-            lines.append("| # | Feature | Mean |SHAP| |")
-            lines.append("|---|---------|---------|")
+            lines.append(labels["model_table_header"])
+            lines.append(labels["model_table_sep"])
             for i, f in enumerate(m["top_features"], 1):
                 lines.append(f"| {i} | {f['feature']} | {f['mean_abs_shap']:.4f} |")
         lines.append("")
         # Cohort
         c = narrative.get("cohort_level", {})
-        lines.append("### 2. 同类申请人对照 (Cohort-level, k=10)\n")
+        lines.append(f"### 2. {labels['cohort']}\n")
         lines.append(c.get("narrative", "_n/a_"))
         if c.get("top_deviations"):
             lines.append("")
-            lines.append("| Feature | z-score | Applicant | Cohort mean |")
-            lines.append("|---------|---------|-----------|-------------|")
+            lines.append(labels["cohort_table_header"])
+            lines.append(labels["cohort_table_sep"])
             for d in c["top_deviations"]:
                 lines.append(f"| {d['feature']} | {d['z']:+.2f} | {d['applicant']:.3g} | {d['cohort_mean']:.3g} |")
         lines.append("")
         # Individual
         ind = narrative.get("individual_level", {})
-        lines.append("### 3. 本申请人 (Individual-level, top-5 SHAP)\n")
+        lines.append(f"### 3. {labels['individual']}\n")
         lines.append(ind.get("narrative", "_n/a_"))
         if ind.get("top_features"):
             lines.append("")
-            lines.append("| # | Feature | Value | SHAP | Quadrant | DAG paths |")
-            lines.append("|---|---------|-------|------|----------|-----------|")
+            lines.append(labels["ind_table_header"])
+            lines.append(labels["ind_table_sep"])
             for i, f in enumerate(ind["top_features"], 1):
                 v = f.get("value")
                 v_str = f"{v:.3g}" if v is not None else "N/A"
                 paths = f.get("dag_paths", [])
-                path_str = "; ".join(" → ".join(p) for p in paths[:2]) or "(no path)"
+                path_str = "; ".join(" → ".join(p) for p in paths[:2]) or labels["no_path"]
                 lines.append(f"| {i} | {f['feature']} | {v_str} | {f['shap']:+.4f} | `{f['quadrant']}` | {path_str} |")
         lines.append("")
         # Robustness
         r = narrative.get("robustness")
         if r:
-            lines.append("### 4. 解释稳健性 (Robustness)\n")
+            lines.append(f"### 4. {labels['robustness']}\n")
             lines.append(f"- {r['interpretation']}")
-            lines.append(f"- Top-1 stable: {r['top_1_stable']:.0%}  |  Top-3 stable: {r['top_3_stable']:.0%}  "
-                         f"({r['n_perturbations']} perturbations @ {r['noise_frac']*100:.0f}% noise)")
+            lines.append(f"- {labels['top1_label']} {r['top_1_stable']:.0%}  |  {labels['top3_label']} {r['top_3_stable']:.0%}  "
+                         f"({r['n_perturbations']} {labels['perturb_label']} @ {r['noise_frac']*100:.0f}% {labels['noise_label']})")
         return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Multi-language labels (M8.4a)
+# ---------------------------------------------------------------------------
+
+_NARRATIVE_LABELS: Dict[str, Dict[str, str]] = {
+    "zh": {
+        "title": "因果叙事",
+        "model": "模型层面 (Model-level)",
+        "cohort": "同类申请人对照 (Cohort-level, k=10)",
+        "individual": "本申请人 (Individual-level, top-5 SHAP)",
+        "robustness": "解释稳健性 (Robustness)",
+        "model_table_header": "| # | Feature | Mean |SHAP| |",
+        "model_table_sep": "|---|---------|---------|",
+        "cohort_table_header": "| Feature | z-score | Applicant | Cohort mean |",
+        "cohort_table_sep": "|---------|---------|-----------|-------------|",
+        "ind_table_header": "| # | Feature | Value | SHAP | Quadrant | DAG paths |",
+        "ind_table_sep": "|---|---------|-------|------|----------|-----------|",
+        "no_path": "(no path)",
+        "top1_label": "Top-1 stable:",
+        "top3_label": "Top-3 stable:",
+        "perturb_label": "perturbations",
+        "noise_label": "noise",
+    },
+    "zh-HK": {
+        "title": "因果敘事",
+        "model": "模型層面 (Model-level)",
+        "cohort": "同類申請人對照 (Cohort-level, k=10)",
+        "individual": "本申請人 (Individual-level, top-5 SHAP)",
+        "robustness": "解釋穩健性 (Robustness)",
+        "model_table_header": "| # | 特徵 | 平均 |SHAP| |",
+        "model_table_sep": "|---|---------|---------|",
+        "cohort_table_header": "| 特徵 | z 分數 | 申請人 | 同類均值 |",
+        "cohort_table_sep": "|---------|---------|-----------|-------------|",
+        "ind_table_header": "| # | 特徵 | 數值 | SHAP | 象限 | DAG 路徑 |",
+        "ind_table_sep": "|---|---------|-------|------|----------|-----------|",
+        "no_path": "(無路徑)",
+        "top1_label": "Top-1 穩定:",
+        "top3_label": "Top-3 穩定:",
+        "perturb_label": "次擾動",
+        "noise_label": "噪聲",
+    },
+    "en": {
+        "title": "Causal Narrative",
+        "model": "Model-level",
+        "cohort": "Cohort comparison (k=10)",
+        "individual": "Individual applicant (top-5 SHAP)",
+        "robustness": "Explanation robustness",
+        "model_table_header": "| # | Feature | Mean |SHAP| |",
+        "model_table_sep": "|---|---------|---------|",
+        "cohort_table_header": "| Feature | z-score | Applicant | Cohort mean |",
+        "cohort_table_sep": "|---------|---------|-----------|-------------|",
+        "ind_table_header": "| # | Feature | Value | SHAP | Quadrant | DAG paths |",
+        "ind_table_sep": "|---|---------|-------|------|----------|-----------|",
+        "no_path": "(no path)",
+        "top1_label": "Top-1 stable:",
+        "top3_label": "Top-3 stable:",
+        "perturb_label": "perturbations",
+        "noise_label": "noise",
+    },
+}

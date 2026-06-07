@@ -1,15 +1,15 @@
 # CausalCredit 开发进展记录
 
-> **最后更新**: 2026-06-06 | **环境**: CPU (Python 3.11, `ldq_cc` conda env)  
-> **状态**: 10 个里程碑全部完成 ✅ (M0-M7 + M8.1 公平性 + M8.2 因果叙事深化)
+> **最后更新**: 2026-06-07 | **环境**: CPU (Python 3.11, `ldq_cc` conda env)  
+> **状态**: 12 个里程碑全部完成 ✅ (M0-M7 + M8.1 公平性 + M8.2 因果叙事深化 + M8.3 服务化 + M8.4 多语言)
 
 ---
 
-## 总览：10 个里程碑全部交付 (M0-M7 + M8.1 + M8.2)
+## 总览：12 个里程碑全部交付 (M0-M7 + M8.1 + M8.2 + M8.3 + M8.4)
 
 | 里程碑 | 目标 | 状态 | 关键产出 |
 |:---:|------|:---:|------|
-| **M0** | 数据准备 | ✅ | Home Credit 30 万行加载器 + 领域 DAG (15 节点 / 28 边) |
+| **M0** | 数据准备 | ✅ | Home Credit 30 万行加载器 + 领域 DAG (18 节点 / 36 边) |
 | **M1** | 5 个核心创新点 | ✅ | `tests/test_*.py` 6 个独立 demo + 9 张 M1 图表 |
 | **M2** | 13 步端到端 pipeline | ✅ | `python -m src.run_pipeline` 跑通, 11 张 PNG + 3 份 JSON 报告 |
 | **M3** | API + UI 服务化 | ✅ | FastAPI 5 端点 (:8000) + Streamlit 4 页 (:8501) |
@@ -18,8 +18,10 @@
 | **M5+** | **CPU 优化** | ✅ | **多表聚合缓存 (65s→2s) + L1 特征预筛选 (-16% 训练耗时), 总耗时 245s→185s** |
 | **M6** | **GPU LightGBM + Optuna** | ✅ | **LightGBM GPU build 接入 (默认关闭) + Optuna 9 维超参搜索 (默认关闭), 2 个可选杠杆** |
 | **M7** | **反欺诈三件套** | ✅ | **三分类子模型 (fraudulent/non_malicious/systemic) + 包装资质因果一致性检测 + 养流水因果去噪评分, 14 步 / 14 图 / 25 新测试** |
-| **M8.1** | **公平性审计 + 反欺诈升级** | ✅ | **3 项公平性指标 (DP/EO/DI) + 4 个默认切片 + 3 张公平性图 + FraudGuardConfig 数据类 (YAML 配置) + 路由分布 PSI 监控, 15 步 / 17 图 / 31 新测试** |
+| **M8.1** | **公平性审计 + 反欺诈升级** | ✅ | **3 项公平性指标 (DP/EO/DI) + 4 个默认切片 + 3 张公平性图 + FraudGuardConfig 数据类 (YAML 配置) + 路由分布 PSI 监控 + 路由 baseline 持久化, 15 步 / 17 图 / 33 新测试** |
 | **M8.2** | **因果叙事深化** | ✅ | **三层叙事引擎 (model/cohort/individual) + DAG 路径追溯 + K-NN k=10 同类对照 + 解释稳健性扰动 + 因果瀑布图 + 三联叙事卡, 16 步 / 19 图 / 17 新测试** |
+| **M8.3** | **完整服务化** | ✅ | **FastAPI 5 端点 fill out (11 smoke test) + 路由 baseline 持久化** |
+| **M8.4** | **多语言 + 港式本地化** | ✅ | **render_markdown 加 zh-HK / en 参数, 港式措辞** |
 
 ---
 
@@ -34,6 +36,8 @@
 | 5 | `815baef` | 开发进展记录 - CPU 环境完成 |
 | 6 | (M8.1) | **公平性审计 + 反欺诈升级 (3 文件 / 31 测试 / 3 张图 / STEP 15)** |
 | 7 | (M8.2) | **因果叙事深化 (2 文件 / 17 测试 / 2 张图 / STEP 16)** |
+| 8 | (M8.3) | **服务化补全: 11 API smoke test + 路由 baseline 持久化 + DAG 加 EXT_SOURCE 边** |
+| 9 | (M8.4) | **多语言: render_markdown 加 zh-HK / en, 4 测试** |
 
 > M0-M4 完整代码在 main 分支。后续每个里程碑均经 `python -m src.run_pipeline` 验证 + 单测全过。
 
@@ -721,8 +725,13 @@ PROCEED             干净
 - ~~反欺诈三件套（三分类 + 包装资质 + 养流水去噪）~~ ✅ M7 完成
 - ~~公平性审计 + 反欺诈阈值可配置 + 路由漂移监控~~ ✅ M8.1 完成
 - ~~因果叙事深化（三层 model/cohort/individual + DAG 路径 + 解释稳健性）~~ ✅ M8.2 完成
-- **M8.3**: 完整服务化 (FastAPI 端点 + Streamlit 4 页填实 + PSI 后台任务)
-- **M8.4**: 多语言 + 港式本地化 (粤语 / 繁体 / 香港场景)
+- ~~M8.3 完整服务化（FastAPI 5 端点 + 路由 baseline 持久化 + DAG 加 EXT_SOURCE 边）~~ ✅ M8.3 完成
+- ~~M8.4 多语言（render_markdown 加 zh-HK / en 参数）~~ ✅ M8.4 完成
+- **M8.3c Streamlit 4 页填实**: 当前 4 页有 st.info 占位符, 接入真 registry 后渲染因果叙事面板
+- **多表聚合 polars 改写**: pandas 单线程 ~27s 可降到 ~5s
+- **反欺诈伪标签升级**: 用反欺诈团队人工标注的真实种子集替换业务规则
+- **实时推理服务**: gRPC / ONNX Runtime (用户未禁用)
+- **生产流量调优**: 反欺诈阈值在生产数据上 ROC 优化 (现为经验值)
 - 实时推理服务（gRPC / ONNX Runtime）
 - K8s / Helm / Terraform 部署
 - **多表聚合 polars 改写**: 当前 pandas 单线程, ~27s 可降到 ~5s
@@ -745,7 +754,7 @@ CausalCredit/
 │   ├── frontend/                 # ✅ app.py + 4 pages
 │   ├── monitoring/               # ✅ drift_detector (含 M8.1e routing_drift)
 │   └── run_pipeline.py           # ✅ 16 步端到端入口
-├── tests/                        # ✅ 26 文件 / 181 用例
+├── tests/                        # ✅ 28 文件 / 200 用例
 ├── configs/                      # ✅ config.yaml
 ├── scripts/                      # ✅ run_api / run_demo / run_tests / setup_env
 ├── data/                         # ✅ Home Credit + German Credit

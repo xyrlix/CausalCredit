@@ -28,6 +28,8 @@ python -m src.run_pipeline    # ~220s on CPU, 16 steps, Home Credit 307K rows
 
 **19 PNGs** land in `output/figures/` (11 from M0–M6 + 3 from M7 anti-fraud: `12_fraud_score_routing.png`, `13_packaging_scatter.png`, `14_denoising_effect.png` + 3 from M8.1 fairness: `12_fairness_group_rates.png`, `13_fairness_metric_gaps.png`, `14_fairness_status.png` + 2 from M8.2 narrative: `15_causal_waterfall.png`, `16_narrative_card.png`).
 
+**FastAPI** is wired and tested (200 tests including 11 API smoke tests in `tests/test_api_smoke.py`); start with `uvicorn src.api.app:app --port 8000` and the registry auto-loads from `output/models/registry_v1.pkl` via FastAPI `lifespan`. `routing_baseline.json` lives at `output/decision_reports/` for persisted PSI monitoring.
+
 ## Architecture
 
 The pipeline is a strictly linear 16-step assembly — `run_pipeline.py` calls one module per stage and nothing is wired up implicitly:
@@ -132,7 +134,7 @@ Everything else listed in `docs/CausalCredit_完整实现计划书.md` §4.1–4
 
 ## Test layout
 
-181 tests across 26 files (~10s):
+200 tests across 28 files (~11s):
 
 | Test file | Cases | What it covers |
 |-----------|------:|----------------|
@@ -143,8 +145,9 @@ Everything else listed in `docs/CausalCredit_完整实现计划书.md` §4.1–4
 | `test_shap.py` | 6 | TreeSHAP + 4-quadrant + subgroup SHAP |
 | `test_decision.py` | 5 | DecisionAdvisor + evidence chain |
 | `test_decision_fairness.py` | 3 | `build_fairness_block` + bias detection (M8.1c) |
-| `test_causal_narrative.py` | 13 | 3-level narrative (model/cohort/individual) + DAG paths + robustness (M8.2a-d) |
+| `test_causal_narrative.py` | 17 | 3-level narrative (model/cohort/individual) + DAG paths + robustness + multi-language render (M8.2 + M8.4a) |
 | `test_narrative_visualize.py` | 4 | Waterfall + 3-panel card (M8.2e) |
+| `test_api_smoke.py` | 11 | FastAPI 5 endpoints via TestClient (M8.3b) |
 | `test_aggregation.py` | 16 | Bureau / prev / POS / INST / CC aggregators |
 | `test_train.py` | 7 | LightGBM GPU/Optuna toggle, `_resolve_device` |
 | `test_fraud_three_class.py` | 7 | Pseudo-labels + 4-class model + `fraud_score` |
@@ -154,5 +157,6 @@ Everything else listed in `docs/CausalCredit_完整实现计划书.md` §4.1–4
 | `test_fraud_config.py` | 7 | `FraudGuardConfig` + threshold override (M8.1d) |
 | `test_fairness.py` | 11 | 3 metrics + 4 slices (M8.1a) |
 | `test_fairness_visualize.py` | 4 | 3 fairness charts render (M8.1b) |
-| `test_routing_drift.py` | 6 | Routing PSI (M8.1e) |
-| Other (`test_loader`, `test_features`, `test_models`, `test_causal_graph`, `test_estimate`, `test_explain`, `test_drift`) | 47 | Earlier milestones |
+| `test_routing_drift.py` | 8 | Routing PSI + persisted baseline (M8.1a, M8.1e) |
+| `test_causal_graph.py` | 7 | DAG nodes/edges/acyclic + EXT_SOURCE_* edges (M8.2g) |
+| Other (`test_loader`, `test_features`, `test_models`, `test_estimate`, `test_explain`, `test_drift`, `test_api_schemas`) | 51 | Earlier milestones |

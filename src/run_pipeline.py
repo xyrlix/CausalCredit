@@ -906,12 +906,23 @@ def run() -> int:
             with open(md_path, "w", encoding="utf-8") as f:
                 f.write(existing + "\n\n" + fair_section)
 
-    # Routing distribution drift (M8.1e)
-    print("  Computing routing-distribution drift (M7 baseline vs current)...")
-    M7_BASELINE = {
-        "PROCEED": 0.052, "REVIEW_BORDERLINE": 0.914,
-        "REJECT_FRAUD": 0.025, "REJECT_PACKAGING": 0.009,
-    }
+    # Routing distribution drift (M8.1e, baseline-persisted in M8.1a)
+    print("  Computing routing-distribution drift (persisted baseline vs current)...")
+    baseline_path = output_dec / "routing_baseline.json"
+    if baseline_path.exists():
+        with open(baseline_path) as f:
+            baseline_doc = json.load(f)
+        M7_BASELINE = {k.replace("M7_", "").replace("_FRAC", ""): float(v)
+                       for k, v in baseline_doc.items() if k.startswith("M7_") and "_FRAC" in k}
+        # Ensure all 5 categories present (REVIEW_DENOISED might be 0 in older baselines)
+        for cat in ("PROCEED", "REVIEW_BORDERLINE", "REVIEW_DENOISED", "REJECT_FRAUD", "REJECT_PACKAGING"):
+            M7_BASELINE.setdefault(cat, 0.0)
+        print(f"    loaded baseline from {baseline_path}")
+    else:
+        # First run ever: persist current batch as the baseline (skip the comparison)
+        M7_BASELINE = {cat: 0.0 for cat in
+                       ("PROCEED", "REVIEW_BORDERLINE", "REVIEW_DENOISED", "REJECT_FRAUD", "REJECT_PACKAGING")}
+        print(f"    no baseline file; persisting current batch as initial baseline")
     M7_categories = list(M7_BASELINE.keys())
     ref_routing = pd.Series(
         rng.choice(M7_categories, size=2000, p=[M7_BASELINE[c] for c in M7_categories])
@@ -926,6 +937,19 @@ def run() -> int:
     for c in M7_categories:
         print(f"      {c:<22s}  ref={drift_result['ref_dist'][c]:.3f}  "
               f"cur={drift_result['cur_dist'][c]:.3f}")
+    # Persist current batch as the next baseline (rolling-update semantic)
+    cur_dist = drift_result["cur_dist"]
+    baseline_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(baseline_path, "w") as f:
+        json.dump({
+            "M7_PROCEED_FRAC": cur_dist.get("PROCEED", 0.0),
+            "M7_REVIEW_BORDERLINE_FRAC": cur_dist.get("REVIEW_BORDERLINE", 0.0),
+            "M7_REVIEW_DENOISED_FRAC": cur_dist.get("REVIEW_DENOISED", 0.0),
+            "M7_REJECT_FRAUD_FRAC": cur_dist.get("REJECT_FRAUD", 0.0),
+            "M7_REJECT_PACKAGING_FRAC": cur_dist.get("REJECT_PACKAGING", 0.0),
+            "_source": "Updated by run_pipeline STEP 15 (FAIRNESS); rolling baseline.",
+            "_categories_ordered": M7_categories,
+        }, f, indent=2)
 
     _t(t_step, "step_15_fairness", step_times)
 

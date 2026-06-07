@@ -19,10 +19,11 @@
 | 6 | **反欺诈三件套** ⭐ | 主观欺诈 / 包装资质 / 养流水 | `src/fraud/` (4 模块) | ✅ M7 |
 | 7 | **公平性审计 (HKMA / EU AI Act)** ⭐ | 模型对性别/年龄/收入/教育切片是否合规？ | `src/fairness/` (3 模块) | ✅ M8.1 |
 | 8 | **因果叙事深化** ⭐ | 客户问"为什么"时给 3 层解释 (model/cohort/individual) + 解释稳健性 | `src/explain/causal_narrative.py` + `narrative_visualize.py` | ✅ M8.2 |
+| 9 | **多语言 + 港式本地化** ⭐ | zh-HK 繁体 / 港式措辞 / en 国际化 | `CausalNarrative.render_markdown(language=)` | ✅ M8.4 |
 
 ---
 
-## 📊 进展看板（10 个里程碑全部完成：M0-M7 + M8.1 + M8.2）
+## 📊 进展看板（12 个里程碑全部完成：M0-M7 + M8.1 + M8.2 + M8.3 + M8.4）
 
 | # | 里程碑 | 关键产出 | 累计效果 | Commit |
 |:-:|--------|----------|---------|--------|
@@ -37,8 +38,10 @@
 | **M7** | **反欺诈三件套** ⭐ | 三分类子模型 + 包装资质 + 养流水去噪, 14 步 / 14 图 / 25 新测试 | **5 维 routing** | `7015282` |
 | **M8.1** | **公平性审计 + 反欺诈升级** ⭐ | 3 项公平性指标 (DP/EO/DI) + 4 切片 + 3 张图 + FraudGuardConfig (YAML) + 路由 PSI, 15 步 / 17 图 / 31 新测试 | **HKMA / EU AI Act 合规** | (M8.1) |
 | **M8.2** | **因果叙事深化** ⭐ | 3 层叙事 (model/cohort/individual) + DAG 路径追溯 + 解释稳健性扰动, 16 步 / 19 图 / 17 新测试 | **"challenge the decision" 完整回答** | (M8.2) |
+| **M8.3** | **完整服务化** ⭐ | FastAPI 5 端点 fill out (11 smoke test) + 路由 baseline 持久化 (rolling update) + DAG 加 EXT_SOURCE 边 | **可生产化 API 端点** | (M8.3) |
+| **M8.4** | **多语言 + 港式本地化** ⭐ | `render_markdown(language=)` 加 zh-HK (繁體) / en 参数, 港式措辞 | **跨境 / 国际化就绪** | (M8.4) |
 
-**总投入**: 26 个测试文件 / **181 个测试用例** (全跑 9.9s) / **569 行反欺诈代码 + 432 行公平性代码 + 489 行叙事代码** / **19 张图表** / **3 份决策报告 + 公平性 + fraud + causal_narrative_v2 字段** / **14 份设计文档**
+**总投入**: 28 个测试文件 / **200 个测试用例** (全跑 10.9s) / **569 行反欺诈代码 + 432 行公平性代码 + 489 行叙事代码** / **19 张图表** / **3 份决策报告 + 公平性 + fraud + causal_narrative_v2 字段** / **14 份设计文档**
 
 ---
 
@@ -62,7 +65,7 @@
 # Streamlit 前端
 /home/tony/anaconda3/envs/ldq_cc/bin/streamlit run src/frontend/app.py
 
-# 单元测试 (181 用例, ~10 秒)
+# 单元测试 (200 用例, ~11 秒)
 /home/tony/anaconda3/envs/ldq_cc/bin/python -m pytest tests/ -v --tb=short
 ```
 
@@ -292,7 +295,7 @@ CausalCredit/
 │   ├── frontend/              # Streamlit 4 页
 │   ├── monitoring/            # PSI 漂移检测 (3 层) + 路由分布 PSI
 │   └── run_pipeline.py        # 16 步端到端入口
-├── tests/                     # 26 个测试文件, 181 用例
+├── tests/                     # 28 个测试文件, 200 用例
 ├── configs/                   # config.yaml
 ├── scripts/                   # run_api / run_demo / run_tests / setup_env
 ├── data/

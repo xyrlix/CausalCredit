@@ -209,3 +209,78 @@ def test_render_markdown_contains_sections(fitted_gbt):
     assert "### 1. 模型层面" in md
     assert "### 2. 同类申请人对照" in md
     assert "### 3. 本申请人" in md
+
+
+# ---------------------------------------------------------------------------
+# M8.4a — multi-language render_markdown
+# ---------------------------------------------------------------------------
+
+
+def test_render_markdown_zh_default():
+    """Default (Simplified Chinese) headings preserved for backwards compat."""
+    from src.explain.causal_narrative import CausalNarrative
+    cn = CausalNarrative(model=None, feature_names=["x", "y", "z"], dag=None)
+    full = cn.build_full_narrative(
+        features={"x": 1.0, "y": 0.5, "z": -0.2},
+        shap_row=np.array([0.1, -0.05, 0.3]),
+        shap_global=np.zeros((5, 3)),
+        X_train=pd.DataFrame({"x": [0.0] * 10, "y": [0.0] * 10, "z": [0.0] * 10}),
+        y_prob_train=np.zeros(10), run_robustness=False,
+    )
+    md = CausalNarrative.render_markdown(full)
+    assert "## 因果叙事" in md
+    assert "### 1. 模型层面" in md
+    assert "### 2. 同类申请人对照" in md
+    assert "### 3. 本申请人" in md
+    assert "### 4. 解释稳健性" not in md  # robustness was skipped
+
+
+def test_render_markdown_zh_hk_traditional():
+    """zh-HK uses Traditional Chinese + 港式措辞 (層面 / 對照 / 申請人 / 穩健性)."""
+    from src.explain.causal_narrative import CausalNarrative
+    cn = CausalNarrative(model=None, feature_names=["x", "y", "z"], dag=None)
+    full = cn.build_full_narrative(
+        features={"x": 1.0, "y": 0.5, "z": -0.2},
+        shap_row=np.array([0.1, -0.05, 0.3]),
+        shap_global=np.zeros((5, 3)),
+        X_train=pd.DataFrame({"x": [0.0] * 10, "y": [0.0] * 10, "z": [0.0] * 10}),
+        y_prob_train=np.zeros(10), run_robustness=False,
+    )
+    md = CausalNarrative.render_markdown(full, language="zh-HK")
+    assert "## 因果敘事" in md
+    assert "### 1. 模型層面" in md
+    assert "### 2. 同類申請人對照" in md
+    assert "### 3. 本申請人" in md
+
+
+def test_render_markdown_en():
+    """English headings for international reviewers."""
+    from src.explain.causal_narrative import CausalNarrative
+    cn = CausalNarrative(model=None, feature_names=["x", "y", "z"], dag=None)
+    full = cn.build_full_narrative(
+        features={"x": 1.0, "y": 0.5, "z": -0.2},
+        shap_row=np.array([0.1, -0.05, 0.3]),
+        shap_global=np.zeros((5, 3)),
+        X_train=pd.DataFrame({"x": [0.0] * 10, "y": [0.0] * 10, "z": [0.0] * 10}),
+        y_prob_train=np.zeros(10), run_robustness=False,
+    )
+    md = CausalNarrative.render_markdown(full, language="en")
+    assert "## Causal Narrative" in md
+    assert "### 1. Model-level" in md
+    assert "### 2. Cohort comparison" in md
+    assert "### 3. Individual applicant" in md
+
+
+def test_render_markdown_unknown_language_falls_back_to_zh():
+    """Unknown language code falls back to Simplified Chinese, not crash."""
+    from src.explain.causal_narrative import CausalNarrative
+    cn = CausalNarrative(model=None, feature_names=["x", "y", "z"], dag=None)
+    full = cn.build_full_narrative(
+        features={"x": 1.0, "y": 0.5, "z": -0.2},
+        shap_row=np.array([0.1, -0.05, 0.3]),
+        shap_global=np.zeros((5, 3)),
+        X_train=pd.DataFrame({"x": [0.0] * 10, "y": [0.0] * 10, "z": [0.0] * 10}),
+        y_prob_train=np.zeros(10), run_robustness=False,
+    )
+    md = CausalNarrative.render_markdown(full, language="klingon")
+    assert "## 因果叙事" in md
