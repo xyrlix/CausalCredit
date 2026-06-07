@@ -41,6 +41,13 @@ from src.explain.evidence import EvidenceChainGenerator
 from src.explain.shap_explain import SHAPExplainer
 from src.models.calibrate import IsotonicCalibrator
 from src.models.train import LightGBMTrainer
+from .model_manifest import (
+    build_manifest,
+    make_active_version,
+    read_manifest,
+    validate_cache,
+    write_manifest,
+)
 
 REGISTRY_CACHE = Path("output/models/registry_v1.pkl")
 SAMPLE_SIZE = 50000
@@ -64,17 +71,26 @@ class ModelRegistry:
         self.training_data: Optional[pd.DataFrame] = None
         self.ate_summary: Dict = {}
         self.cate_summary: Dict = {}
+        self.active_version: str = ""
+        self.model_hash: str = ""
 
     # ------------------------------------------------------------------
     # Public loader
     # ------------------------------------------------------------------
     def load(self, force_retrain: bool = False) -> "ModelRegistry":
-        if not force_retrain and REGISTRY_CACHE.exists():
+        if not force_retrain and REGISTRY_CACHE.exists() and validate_cache(REGISTRY_CACHE):
             try:
                 self._load_from_cache()
+                # Pull provenance from the manifest
+                manifest = read_manifest(REGISTRY_CACHE) or {}
+                self.active_version = manifest.get("active_version", "")
+                self.model_hash = manifest.get("pickle_sha256", "")
                 return self
             except Exception as exc:
                 print(f"[registry] cache load failed ({exc}); retraining")
+        elif not force_retrain and REGISTRY_CACHE.exists():
+            # Cache exists but manifest missing or hash mismatch → retrain
+            print("[registry] cache manifest missing or hash mismatch; retraining")
 
         self._train_from_scratch()
         self._save_cache()
@@ -123,7 +139,15 @@ class ModelRegistry:
             "REGION_POPULATION_RELATIVE", "DAYS_REGISTRATION",
             "DAYS_ID_PUBLISH", "EXT_SOURCE_3", "EXT_SOURCE_1",
         ]
-        feature_cols = [c for c in dag_cols if c in df.columns and c != "TARGET"]
+        # Dedup (preserve order) — EXT_SOURCE_3 / EXT_SOURCE_1 may already be
+        # in the DAG nodes, and duplicate column names would later turn
+        # `X[c]` from a Series into a DataFrame.
+        seen: set = set()
+        feature_cols = []
+        for c in dag_cols:
+            if c in df.columns and c != "TARGET" and c not in seen:
+                seen.add(c)
+                feature_cols.append(c)
         miss_rate = df[feature_cols].isnull().mean().sort_values()
         feature_cols = list(miss_rate.head(25).index)
         self.feature_cols = feature_cols
@@ -141,7 +165,7 @@ class ModelRegistry:
             X[c] = le.transform(X[c].astype(str).fillna("__nan__"))
             self.label_encoders[c] = le
         for c in feature_cols:
-            if c not in self.cat_cols and X[c].isnull().any():
+            if c not in self.cat_cols and bool(X[c].isnull().any()):
                 med = float(X[c].median())
                 X[c] = X[c].fillna(med)
                 self.median_imputers[c] = med
@@ -232,7 +256,19 @@ class ModelRegistry:
         }
         with open(REGISTRY_CACHE, "wb") as f:
             pickle.dump(payload, f)
-        print(f"[registry] cached -> {REGISTRY_CACHE}")
+        # M8.5e: SHA-256 + provenance sidecar
+        n_samples = int(len(self.training_data)) if self.training_data is not None else 0
+        self.active_version = make_active_version()
+        manifest = build_manifest(
+            REGISTRY_CACHE,
+            active_version=self.active_version,
+            feature_cols=self.feature_cols,
+            cat_cols=self.cat_cols,
+            n_samples=n_samples,
+        )
+        write_manifest(REGISTRY_CACHE, manifest)
+        self.model_hash = manifest["pickle_sha256"]
+        print(f"[registry] cached -> {REGISTRY_CACHE} (version={self.active_version}, sha={self.model_hash[:12]})")
 
     def _load_from_cache(self) -> None:
         with open(REGISTRY_CACHE, "rb") as f:

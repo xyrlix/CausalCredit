@@ -87,4 +87,7 @@ async def health_check(registry: ModelRegistry = Depends(get_model_registry)):
         "has_shap": registry.shap_explainer is not None,
         "has_counterfactual": registry.counterfactual_reasoner is not None,
         "has_ate_summary": bool(registry.ate_summary),
+        # M8.5e: model provenance for ops & audit
+        "active_version": registry.active_version or None,
+        "model_hash": (registry.model_hash[:16] + "…") if registry.model_hash else None,
     }
