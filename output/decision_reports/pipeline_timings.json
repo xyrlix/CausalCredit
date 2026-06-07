@@ -1,13 +1,13 @@
 {
-  "total_seconds": 212.3,
+  "total_seconds": 219.51,
   "per_step": [
     {
       "name": "step_1_data_loading",
-      "seconds": 2.23
+      "seconds": 2.27
     },
     {
       "name": "step_2_data_validation",
-      "seconds": 0.75
+      "seconds": 0.76
     },
     {
       "name": "step_3_data_cleaning",
@@ -15,11 +15,11 @@
     },
     {
       "name": "step_3_5_multi_table_aggregation",
-      "seconds": 2.11
+      "seconds": 2.1
     },
     {
       "name": "step_4_feature_engineering",
-      "seconds": 1.6
+      "seconds": 1.58
     },
     {
       "name": "step_5_train_test_split",
@@ -27,15 +27,15 @@
     },
     {
       "name": "step_5_5_feature_pruning",
-      "seconds": 3.82
+      "seconds": 3.32
     },
     {
       "name": "step_6_model_training",
-      "seconds": 118.44
+      "seconds": 123.82
     },
     {
       "name": "step_7_evaluation_calibration",
-      "seconds": 13.28
+      "seconds": 13.34
     },
     {
       "name": "step_8_causal_discovery",
@@ -43,7 +43,7 @@
     },
     {
       "name": "step_9_ate_estimation",
-      "seconds": 0.36
+      "seconds": 0.37
     },
     {
       "name": "step_10_cate_estimation",
@@ -51,23 +51,27 @@
     },
     {
       "name": "step_11_refutation",
-      "seconds": 0.67
+      "seconds": 0.64
     },
     {
       "name": "step_12_shap_four_quadrant",
-      "seconds": 3.1
+      "seconds": 2.76
     },
     {
       "name": "step_13_counterfactual_decision",
-      "seconds": 3.55
+      "seconds": 3.5
     },
     {
       "name": "step_14_anti_fraud",
-      "seconds": 38.83
+      "seconds": 37.07
     },
     {
       "name": "step_15_fairness",
-      "seconds": 1.03
+      "seconds": 1.16
+    },
+    {
+      "name": "step_16_narrative",
+      "seconds": 4.29
     }
   ]
 }

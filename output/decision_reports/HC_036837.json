@@ -1,6 +1,6 @@
 {
   "applicant_id": "HC_036837",
-  "timestamp": "2026-06-06T14:23:17.387809Z",
+  "timestamp": "2026-06-06T14:53:30.745430Z",
   "default_probability": 0.0488,
   "score": 810,
   "risk_grade": "A",
@@ -127,5 +127,141 @@
     "routing_reasons": [
       "packaging_score=0.389 in [0.30, 0.50) borderline"
     ]
+  },
+  "causal_narrative_v2": {
+    "model_level": {
+      "top_features": [
+        {
+          "feature": "EXT_SOURCE_2",
+          "mean_abs_shap": 0.3012479629933438
+        },
+        {
+          "feature": "EXT_SOURCE_3",
+          "mean_abs_shap": 0.289104780945538
+        },
+        {
+          "feature": "EXT_SOURCE_1",
+          "mean_abs_shap": 0.15470198735159293
+        }
+      ],
+      "narrative": "At the model level, P(default) for the average applicant is driven primarily by EXT_SOURCE_2 (mean |SHAP|=0.3012), followed by EXT_SOURCE_3 (0.2891) and EXT_SOURCE_1 (0.1547). These three features account for the bulk of all decisions.",
+      "feature_summary": "EXT_SOURCE_2 (0.3012), EXT_SOURCE_3 (0.2891), EXT_SOURCE_1 (0.1547)"
+    },
+    "cohort_level": {
+      "k": 10,
+      "cohort_mean_p_default": 0.07477113558099226,
+      "applicant_p_default": 0.04882138567598062,
+      "delta": -0.025949749905011636,
+      "top_deviations": [
+        {
+          "feature": "BUREAU_AMT_CREDIT_SUM_DEBT_MIN",
+          "z": 4.962,
+          "applicant": 1854610.83,
+          "cohort_mean": 177032.25
+        },
+        {
+          "feature": "BUREAU_TYPE_CAR_LOAN_FRAC",
+          "z": 3.534,
+          "applicant": 0.5,
+          "cohort_mean": 0.18833333333333332
+        },
+        {
+          "feature": "BUREAU_AMT_CREDIT_SUM_DEBT_MEAN",
+          "z": 3.108,
+          "applicant": 1854610.83,
+          "cohort_mean": 460720.7293125
+        },
+        {
+          "feature": "INST_AMT_PAYMENT_SUM",
+          "z": 1.645,
+          "applicant": 4828325.22,
+          "cohort_mean": 3331961.775
+        },
+        {
+          "feature": "EXT_SOURCE_2",
+          "z": -1.55,
+          "applicant": 0.2652563401861944,
+          "cohort_mean": 0.5627903795296784
+        }
+      ],
+      "narrative": "Among the 10 training applicants most similar to this one, the average P(default) is 7.48%, so this applicant's P(default) of 4.88% is noticeably lower than the cohort (Δ=-0.0259). The applicant deviates most from the cohort in: BUREAU_AMT_CREDIT_SUM_DEBT_MIN (z=+4.96), BUREAU_TYPE_CAR_LOAN_FRAC (z=+3.53), BUREAU_AMT_CREDIT_SUM_DEBT_MEAN (z=+3.11)."
+    },
+    "individual_level": {
+      "top_features": [
+        {
+          "feature": "EXT_SOURCE_2",
+          "value": 0.2652563401861944,
+          "shap": 0.3557728294459186,
+          "quadrant": "TRUSTED",
+          "direction": "increases_default",
+          "dag_paths": [
+            [
+              "EXT_SOURCE_2",
+              "TARGET"
+            ]
+          ],
+          "n_paths": 1
+        },
+        {
+          "feature": "EXT_SOURCE_3",
+          "value": 0.3842068130556564,
+          "shap": 0.29839962973562706,
+          "quadrant": "TRUSTED",
+          "direction": "increases_default",
+          "dag_paths": [],
+          "n_paths": 0
+        },
+        {
+          "feature": "BUREAU_TYPE_CAR_LOAN_FRAC",
+          "value": 0.5,
+          "shap": -0.21120789178797925,
+          "quadrant": "TRUSTED",
+          "direction": "decreases_default",
+          "dag_paths": [],
+          "n_paths": 0
+        },
+        {
+          "feature": "AMT_GOODS_PRICE",
+          "value": 900000.0,
+          "shap": -0.18853592330142624,
+          "quadrant": "UNTRUSTED",
+          "direction": "decreases_default",
+          "dag_paths": [
+            [
+              "AMT_GOODS_PRICE",
+              "TARGET"
+            ]
+          ],
+          "n_paths": 1
+        },
+        {
+          "feature": "INST_AMT_PAYMENT_SUM",
+          "value": 4828325.22,
+          "shap": -0.18415132922499963,
+          "quadrant": "UNTRUSTED",
+          "direction": "decreases_default",
+          "dag_paths": [],
+          "n_paths": 0
+        }
+      ],
+      "narrative": "The dominant risk driver is EXT_SOURCE_2 (SHAP=+0.3558, quadrant=TRUSTED). In the causal DAG this feature reaches TARGET via: EXT_SOURCE_2 → TARGET. 2 of the top-5 features are UNTRUSTED (model says important, but no causal support); 3 are TRUSTED (model and causal both agree).",
+      "dominant_feature": "EXT_SOURCE_2",
+      "dominant_dag_path": [
+        "EXT_SOURCE_2",
+        "TARGET"
+      ],
+      "n_trusted": 3,
+      "n_untrusted": 2,
+      "n_masked": 0
+    },
+    "robustness": {
+      "n_perturbations": 20,
+      "noise_frac": 0.1,
+      "top_1_stable": 0.5,
+      "top_3_stable": 0.1,
+      "stability_score": 0.33999999999999997,
+      "interpretation": "Explanation is fragile (stability=0.34); interpret with caution."
+    },
+    "applicant_id": "HC_036837"
   }
 }

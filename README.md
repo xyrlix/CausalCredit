@@ -18,10 +18,11 @@
 | 5 | **因果引导决策建议** | 给信贷员 / 客户的可执行话术 | `src/explain/decision.py` + `evidence.py` | ✅ |
 | 6 | **反欺诈三件套** ⭐ | 主观欺诈 / 包装资质 / 养流水 | `src/fraud/` (4 模块) | ✅ M7 |
 | 7 | **公平性审计 (HKMA / EU AI Act)** ⭐ | 模型对性别/年龄/收入/教育切片是否合规？ | `src/fairness/` (3 模块) | ✅ M8.1 |
+| 8 | **因果叙事深化** ⭐ | 客户问"为什么"时给 3 层解释 (model/cohort/individual) + 解释稳健性 | `src/explain/causal_narrative.py` + `narrative_visualize.py` | ✅ M8.2 |
 
 ---
 
-## 📊 进展看板（9 个里程碑全部完成：M0-M7 + M8.1）
+## 📊 进展看板（10 个里程碑全部完成：M0-M7 + M8.1 + M8.2）
 
 | # | 里程碑 | 关键产出 | 累计效果 | Commit |
 |:-:|--------|----------|---------|--------|
@@ -35,9 +36,9 @@
 | **M6** | **GPU LightGBM + Optuna** | 2 个可选杠杆 (默认关闭, 实测 Home Credit 上不显著) | 接口预留 | `7d496b6` |
 | **M7** | **反欺诈三件套** ⭐ | 三分类子模型 + 包装资质 + 养流水去噪, 14 步 / 14 图 / 25 新测试 | **5 维 routing** | `7015282` |
 | **M8.1** | **公平性审计 + 反欺诈升级** ⭐ | 3 项公平性指标 (DP/EO/DI) + 4 切片 + 3 张图 + FraudGuardConfig (YAML) + 路由 PSI, 15 步 / 17 图 / 31 新测试 | **HKMA / EU AI Act 合规** | (M8.1) |
-| 📝 | **文档 v3** | CLAUDE.md / docs/ M7 + M8.1 实现记录 | 需求↔实现可追溯 | `c0ac8bc` |
+| **M8.2** | **因果叙事深化** ⭐ | 3 层叙事 (model/cohort/individual) + DAG 路径追溯 + 解释稳健性扰动, 16 步 / 19 图 / 17 新测试 | **"challenge the decision" 完整回答** | (M8.2) |
 
-**总投入**: 24 个测试文件 / **164 个测试用例** (全跑 10.0s) / **569 行反欺诈代码 + 432 行公平性代码** / **17 张图表** / **3 份决策报告 + 公平性字段** / **13 份设计文档**
+**总投入**: 26 个测试文件 / **181 个测试用例** (全跑 9.9s) / **569 行反欺诈代码 + 432 行公平性代码 + 489 行叙事代码** / **19 张图表** / **3 份决策报告 + 公平性 + fraud + causal_narrative_v2 字段** / **14 份设计文档**
 
 ---
 
@@ -52,7 +53,7 @@
 ### 一键运行
 
 ```bash
-# 端到端 pipeline (15 步, 含 STEP 3.5 多表 + STEP 14 反欺诈 + STEP 15 公平性, ~212 秒 CPU)
+# 端到端 pipeline (16 步, 含 STEP 3.5 多表 + STEP 14 反欺诈 + STEP 15 公平性 + STEP 16 叙事, ~220 秒 CPU)
 /home/tony/anaconda3/envs/ldq_cc/bin/python -m src.run_pipeline
 
 # FastAPI 后端
@@ -61,7 +62,7 @@
 # Streamlit 前端
 /home/tony/anaconda3/envs/ldq_cc/bin/streamlit run src/frontend/app.py
 
-# 单元测试 (164 用例, ~10 秒)
+# 单元测试 (181 用例, ~10 秒)
 /home/tony/anaconda3/envs/ldq_cc/bin/python -m pytest tests/ -v --tb=short
 ```
 
@@ -95,7 +96,7 @@
 
 ---
 
-## 🔬 15 步 Pipeline 详解
+## 🔬 16 步 Pipeline 详解
 
 ```
 STEP 1-2   加载 + 校验       Home Credit 307K × 122 → DataFrame + 校验报告
@@ -114,12 +115,13 @@ STEP 12    SHAP 四象限       TreeSHAP + 4 象限 (TRUSTED/UNTRUSTED/MASKED/NE
 STEP 13    反事实 + 决策     DiCE NSGA-II + 决策 JSON 报告 (中英模板)
 STEP 14    反欺诈三件套 ⭐   FraudGuard (3 分类 + 包装资质 + 养流水去噪)
 STEP 15    公平性审计 ⭐     3 指标 (DP/EO/DI) × 4 切片 + 路由漂移 PSI
+STEP 16    因果叙事深化 ⭐   3 层叙事 (model/cohort/individual) + DAG 路径 + 解释稳健性
 ```
 
 **关键产出**:
-- `output/figures/17 PNG` — ROC / 特征重要性 / DAG / CATE / SHAP / 反欺诈 / 公平性 等
-- `output/decision_reports/3 JSON + 3 MD` — 完整决策报告 (含 fraud + fairness 字段)
-- `output/decision_reports/pipeline_summary.json` — 主指标 + routing 分布 + fairness verdict
+- `output/figures/19 PNG` — ROC / 特征重要性 / DAG / CATE / SHAP / 反欺诈 / 公平性 / 因果瀑布 / 三联叙事卡
+- `output/decision_reports/3 JSON + 3 MD` — 完整决策报告 (含 fraud + fairness + causal_narrative_v2 字段)
+- `output/decision_reports/pipeline_summary.json` — 主指标 + routing 分布 + fairness verdict + narrative stability
 
 ---
 
@@ -134,9 +136,9 @@ STEP 15    公平性审计 ⭐     3 指标 (DP/EO/DI) × 4 切片 + 路由漂�
 | ATE (`AMT_CREDIT` → `TARGET`) | +0.0092 | +0.0092 | +0.0092 | +0.0092 | +0.0092 | — |
 | CATE 一致性 (3 方法) | 0.578 | 0.548 | 0.548 | 0.548 | 0.548 | -0.030 |
 | 反驳验证 | 3/4 | 3/4 | 3/4 | 3/4 | 3/4 | — |
-| 决策报告 | 3 份 | 3 份 | 3 份 | 3 份 | **+ fraud 字段** | — |
-| 单元测试 | 85 / 1.34s | 98 / 1.44s | 101 / 1.46s | 108 / 7.69s | **133 / 8.0s** | +48 |
-| Pipeline 端到端耗时 | 84.8s | 244.9s (冷) | 184.5s (热) | 184.5s (热) | **194.9s (热)** | +110s |
+| 决策报告 | 3 份 | 3 份 | 3 份 | 3 份 | **+ fraud 字段** | **+ causal_narrative_v2 字段** | — |
+| 单元测试 | 85 / 1.34s | 98 / 1.44s | 101 / 1.46s | 108 / 7.69s | 133 / 8.0s | **181 / 9.9s** | +96 |
+| Pipeline 端到端耗时 | 84.8s | 244.9s (冷) | 184.5s (热) | 184.5s (热) | 194.9s (热) | **219.5s (热)** | +135s |
 
 > 完整 per-step 耗时、ATE/CATE/Refutation 数值、反欺诈 routing 分布见 [`BENCHMARKS.md`](BENCHMARKS.md)
 
@@ -227,6 +229,53 @@ education_group     status=WARNING  DP=0.008  EO=0.050  DI=0.000
 
 ---
 
+## 🧠 因果叙事深化 (M8.2 重点)
+
+**问题**: M7 之前的决策报告 1 句话 ("Primary driver: EXT_SOURCE_2 (SHAP=+0.94)") 在监管 "challenge the decision" 流程下, 客户/信贷员/审计员都会问 3 个后续问题 — 模型普遍怎么判断? 跟同类申请人比如何? 这一单的因果路径是什么? 解释是否稳定?
+
+**做法**: `src/explain/causal_narrative.py::CausalNarrative` 把 "为什么这单" 拆成 4 段:
+
+| 段 | 回答的问题 | 输入 | 输出 |
+|---|---|---|---|
+| **Model-level** | "模型普遍靠哪些特征判断?" | 5K 测试集 SHAP | top-3 mean \|SHAP\| 特征 |
+| **Cohort-level** | "跟历史最像这单的 10 个申请人比, 风险是否也高?" | KNN k=10 (z-score 标准化) | cohort P(default) + Δ + top-5 z 偏差 |
+| **Individual-level** | "主导特征走了哪些因果路径到达 TARGET?" | 单条 SHAP + DAG + 4 象限 | 主导特征 + 主导路径 + 4 象限计数 |
+| **Robustness** | "加 10% 噪声后, top-3 还会变吗?" | 20× 高斯扰动 | stability_score (0.6×top1 + 0.4×top3) |
+
+**实测 (Home Credit 3 个申请人对照)**:
+
+| 申请人 | 等级 | P(default) | cohort Δ | 主导特征 | stability | 业务解读 |
+|---|---|---:|---:|---|---:|---|
+| HC_006355 | E (高) | 89.55% | **+0.60** | EXT_SOURCE_2 | **0.94** | 单一主导, 极稳定, 远超 cohort |
+| HC_036837 | A (边界) | 4.88% | -0.026 | EXT_SOURCE_2 | 0.34 | 与 cohort 类似, 解释 moderately robust |
+| HC_023041 | A (低) | 0.26% | -0.011 | DAYS_EMPLOYED | **0.20** | 无强主导, fragile, top-1 在扰动下 70% 换位 |
+
+**关键发现**:
+- **高风险 ↔ 稳定解释**: 单一强主导特征 → 解释不会漂
+- **低风险 ↔ fragile 解释**: 无强主导特征 → 解释在小扰动下大量换位, 不可直接当证据
+- **cohort Δ 与风险等级强正相关**: 无需 SHAP 就能 outlier 化
+
+**2 张新图**:
+- `15_causal_waterfall.png` — top features 横向条形图, 颜色按 4 象限 (TRUSTED 绿 / UNTRUSTED 红 / MASKED 橙 / NEGLIGIBLE 灰)
+- `16_narrative_card.png` — 3 并排文本面板 (蓝/黄/绿背景) 给非技术审阅者 (合规 / 运营) 一眼看懂
+
+**决策报告新字段** (`causal_narrative_v2`):
+
+```json
+{
+  "causal_narrative_v2": {
+    "model_level": {"top_features": [{"feature": "EXT_SOURCE_2", "mean_abs_shap": 0.3012}, ...], "narrative": "..."},
+    "cohort_level": {"k": 10, "cohort_mean_p_default": 0.295, "delta": 0.60, "top_deviations": [...], "narrative": "..."},
+    "individual_level": {"dominant_feature": "EXT_SOURCE_2", "dominant_dag_path": ["EXT_SOURCE_2", "TARGET"], "n_trusted": 5, "narrative": "..."},
+    "robustness": {"top_1_stable": 1.0, "top_3_stable": 0.85, "stability_score": 0.94, "interpretation": "Explanation is robust."}
+  }
+}
+```
+
+> 完整需求↔实现追溯见 [`docs/CausalCredit_M8.2_因果叙事深化实现记录.md`](docs/CausalCredit_M8.2_因果叙事深化实现记录.md)
+
+---
+
 ## 📁 项目结构
 
 ```
@@ -236,27 +285,28 @@ CausalCredit/
 │   ├── features/              # 因果特征 (5 个) + aggregator (8 表 JOIN)
 │   ├── causal/                # DAG / discovery / ATE / CATE / refute
 │   ├── models/                # LightGBM (+ GPU/Optuna) / GBT / 校准 / 评估
-│   ├── explain/               # SHAP / DiCE / 决策 / 证据链
+│   ├── explain/               # SHAP / DiCE / 决策 / 证据链 / M8.2 因果叙事
 │   ├── fraud/                 # M7 反欺诈三件套 (three_class + packaging + denoising + pipeline)
+│   ├── fairness/              # M8.1 公平性指标 + 切片 + 可视化
 │   ├── api/                   # FastAPI 5 端点 + 业务服务层
 │   ├── frontend/              # Streamlit 4 页
-│   ├── monitoring/            # PSI 漂移检测 (3 层)
-│   └── run_pipeline.py        # 14 步端到端入口
-├── tests/                     # 19 个测试文件, 133 用例
+│   ├── monitoring/            # PSI 漂移检测 (3 层) + 路由分布 PSI
+│   └── run_pipeline.py        # 16 步端到端入口
+├── tests/                     # 26 个测试文件, 181 用例
 ├── configs/                   # config.yaml
 ├── scripts/                   # run_api / run_demo / run_tests / setup_env
 ├── data/
 │   ├── home-credit-default-risk/    # 307K × 122 主数据集
 │   └── german_credit.csv            # 1K × 20 快速基线
 ├── output/                    # 详见下一节
-└── docs/                      # 12 份设计文档
+└── docs/                      # 14 份设计文档 (含 M7/M8.1/M8.2 实现记录)
 ```
 
 ### `output/` 目录内容
 
 ```
 output/
-├── figures/                              # 17 张 PNG
+├── figures/                              # 19 张 PNG
 │   ├── 01_roc_curve.png                  # ROC + PR
 │   ├── 02_feature_importance.png         # LightGBM gain
 │   ├── 03_confusion_matrix.png
@@ -273,12 +323,14 @@ output/
 │   ├── 14_denoising_effect.png           # M7 P(default) vs denoised P
 │   ├── 12_fairness_group_rates.png       # M8.1 per-slice per-group TPR/FPR
 │   ├── 13_fairness_metric_gaps.png       # M8.1 DP/EO/DI 带阈值线
-│   └── 14_fairness_status.png            # M8.1 slice 状态仪表板
+│   ├── 14_fairness_status.png            # M8.1 slice 状态仪表板
+│   ├── 15_causal_waterfall.png           # M8.2 top features 4 象限瀑布图
+│   └── 16_narrative_card.png             # M8.2 三联叙事卡 (model/cohort/individual)
 ├── decision_reports/
-│   ├── HC_006355.json                    # 高风险 (P=89%, E)
-│   ├── HC_023041.json                    # 低风险 (P=0.3%, A)
-│   ├── HC_036837.json                    # 中风险 (P=4.9%, A)
-│   ├── *.md                              # 同 3 份的可读报告
+│   ├── HC_006355.json                    # 高风险 (P=89%, E) — 含 causal_narrative_v2
+│   ├── HC_023041.json                    # 低风险 (P=0.3%, A) — 含 causal_narrative_v2
+│   ├── HC_036837.json                    # 中风险 (P=4.9%, A) — 含 causal_narrative_v2
+│   ├── *.md                              # 同 3 份的可读报告 (含 4 段叙事)
 │   ├── pipeline_summary.json             # 主指标 + 反欺诈 routing + 公平性 verdict
 │   └── pipeline_timings.json             # per-step 耗时
 ├── demo_m1/                              # M1 5 个创新点独立图表
@@ -362,10 +414,13 @@ output/
 
 ## 🔮 未来迭代方向
 
+- ~~**多语言决策建议** — 粤语 / 繁体~~ → 列为 **M8.4** (在 `CausalNarrative.render_markdown` 已支持中文标题基础上扩展)
+- ~~**公平性验证** — `CODE_GENDER` 节点已存在, 缺 Demographic Parity / Equal Opportunity 检验~~ → ✅ M8.1 完成
+- ~~**因果叙事深化** — 讲好"为什么高", 群组级 confounder 归因~~ → ✅ M8.2 完成
+- **M8.3 完整服务化** — FastAPI 5 端点填实 + Streamlit 4 页填实 + PSI 后台任务
+- **M8.4 多语言 + 港式本地化** — 粤语 / 繁体 / 香港场景
 - **多表聚合 polars 改写** — pandas 单线程 ~27s, 估可降到 ~5s
 - **反欺诈伪标签升级** — 用反欺诈团队人工标注的真实种子集替换业务规则
-- **多语言决策建议** — 粤语 / 繁体
-- **公平性验证** — `CODE_GENDER` 节点已存在, 缺 Demographic Parity / Equal Opportunity 检验
 - **实时推理服务** — gRPC / ONNX Runtime (用户未禁用)
 - **生产流量调优** — 反欺诈阈值在生产数据上 ROC 优化 (现为经验值)
 
@@ -375,12 +430,13 @@ output/
 
 | 文档 | 用途 |
 |------|------|
-| [`PROGRESS.md`](PROGRESS.md) | 9 个里程碑详细记录 (M0-M7 + M8.1) |
+| [`PROGRESS.md`](PROGRESS.md) | 10 个里程碑详细记录 (M0-M7 + M8.1 + M8.2) |
 | [`BENCHMARKS.md`](BENCHMARKS.md) | 性能基准 + 反欺诈 routing 分布 + 单测覆盖 |
 | [`CLAUDE.md`](CLAUDE.md) | 给 Claude Code 的协作指引 (架构 / 命令 / 约定) |
-| [`docs/`](docs/) | 13 份原始分析文档 (需求 / 设计 / 验证标准) |
+| [`docs/`](docs/) | 14 份原始分析文档 (需求 / 设计 / 验证标准) |
 | [`docs/CausalCredit_M7_反欺诈三件套实现记录.md`](docs/CausalCredit_M7_反欺诈三件套实现记录.md) | M7 需求↔实现追溯 |
 | [`docs/CausalCredit_M8.1_公平性与反欺诈升级实现记录.md`](docs/CausalCredit_M8.1_公平性与反欺诈升级实现记录.md) | M8.1 公平性审计 + FraudGuardConfig + 路由 PSI |
+| [`docs/CausalCredit_M8.2_因果叙事深化实现记录.md`](docs/CausalCredit_M8.2_因果叙事深化实现记录.md) | M8.2 3 层叙事 + DAG 路径 + 解释稳健性 |
 
 ---
 

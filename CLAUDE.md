@@ -20,17 +20,17 @@ All build / lint / test / run entry points are in the `Makefile`:
 - `make clean` — caches only (does NOT touch `output/` or trained models)
 - `docker-compose up --build` — API `:8000` + frontend `:8501`
 
-The end-to-end pipeline (15 steps, fully working):
+The end-to-end pipeline (16 steps, fully working):
 
 ```bash
-python -m src.run_pipeline    # ~212s on CPU, 15 steps, Home Credit 307K rows
+python -m src.run_pipeline    # ~220s on CPU, 16 steps, Home Credit 307K rows
 ```
 
-**17 PNGs** land in `output/figures/` (11 from M0–M6 + 3 from M7 anti-fraud: `12_fraud_score_routing.png`, `13_packaging_scatter.png`, `14_denoising_effect.png` + 3 from M8.1 fairness: `12_fairness_group_rates.png`, `13_fairness_metric_gaps.png`, `14_fairness_status.png`).
+**19 PNGs** land in `output/figures/` (11 from M0–M6 + 3 from M7 anti-fraud: `12_fraud_score_routing.png`, `13_packaging_scatter.png`, `14_denoising_effect.png` + 3 from M8.1 fairness: `12_fairness_group_rates.png`, `13_fairness_metric_gaps.png`, `14_fairness_status.png` + 2 from M8.2 narrative: `15_causal_waterfall.png`, `16_narrative_card.png`).
 
 ## Architecture
 
-The pipeline is a strictly linear 14-step assembly — `run_pipeline.py` calls one module per stage and nothing is wired up implicitly:
+The pipeline is a strictly linear 16-step assembly — `run_pipeline.py` calls one module per stage and nothing is wired up implicitly:
 
 ```
 HomeCreditLoader          src/data/home_credit_loader.py     307,511 × 122 CSV
@@ -48,6 +48,8 @@ HomeCreditLoader          src/data/home_credit_loader.py     307,511 × 122 CSV
     └─> SHAPExplainer     src/explain/shap_explain.py        TreeSHAP + 4-quadrant labels
     └─> CounterfactualReasoner src/explain/counterfactual.py DiCE NSGA-II + immutable/semi-mutable masks
     └─> FraudGuard        src/fraud/pipeline.py              3-class sub-classifier + packaging + denoising
+    └─> FairnessAudit     src/fairness/                       3 metrics × 4 slices + visualize
+    └─> CausalNarrative   src/explain/causal_narrative.py    3-level (model/cohort/individual) + robustness
 ```
 
 ### Causal DAG (the most important domain object)
@@ -86,6 +88,21 @@ Both expose `get_treatment_variables`, `get_outcome_variable`, `get_confounders(
 
 Routing drift monitoring (M8.1e) lives in `src/monitoring/drift_detector.py::detect_routing_drift` — same PSI algorithm as feature drift, but over the 5-level categorical distribution `PROCEED / REVIEW_BORDERLINE / REVIEW_DENOISED / REJECT_FRAUD / REJECT_PACKAGING`. STEP 15 compares the current batch's routing distribution to a hardcoded M7 baseline; PSI=0.001 in the test run means M7→M8.1 didn't shift routing behavior.
 
+### Causal narrative deepening (M8.2, STEP 16)
+
+`src/explain/causal_narrative.py::CausalNarrative` answers "why is this applicant high/low risk" via a 3-angle story:
+
+1. **Model-level** (`model_level_narrative`) — global mean |SHAP| top-3 across a 5K test subsample. Tells the reviewer "what does this model generally pay attention to".
+2. **Cohort-level** (`cohort_level_narrative`) — KNN k=10 nearest training neighbors, reports cohort mean P(default) + delta + top-5 z-score deviations. Tells "is this applicant an outlier relative to its peers".
+3. **Individual-level** (`individual_level_narrative`) — top-5 SHAP for *this* applicant, with 4-quadrant labels and DAG paths from each top feature to `TARGET` (via `trace_causal_path`, BFS on `networkx.DiGraph`). Identifies the `dominant_feature` and `dominant_dag_path`.
+4. **Robustness** (`explanation_robustness`) — 20× ±10% Gaussian perturbation of features, re-ranks SHAP, measures top-1 / top-3 stability. `stability_score = 0.6 × top_1_stable + 0.4 × top_3_stable`; 3-tier interpretation (`robust >= 0.85` / `moderately robust >= 0.60` / `fragile < 0.60`).
+
+`build_full_narrative` composes all 4 into a single dict injected as `causal_narrative_v2` into each decision JSON. `render_markdown` produces the corresponding 4-section Chinese-titled MD addendum (model-level / cohort-level / individual-level / robustness).
+
+`src/explain/narrative_visualize.py` produces 2 charts: `15_causal_waterfall.png` (horizontal bar chart of top features, color = 4-quadrant) and `16_narrative_card.png` (3 side-by-side text panels for non-technical reviewers).
+
+STEP 16 uses the discovered DAG (`fused_dk` / `fused` / `domain_dag`) when available, otherwise falls back to a `networkx.DiGraph` built from `HomeCreditCausalGraph` nodes + edges. **Empirical finding from the test run**: high-risk applicants (single dominant feature, e.g. EXT_SOURCE_2 ≈ 0) get `stability ≈ 0.94` (top-1 stays put under perturbation); low-risk applicants (no strong dominant feature) get `stability ≈ 0.20` (top-1 flips 70% of the time). Cohort Δ tracks risk grade — high-risk +0.60 vs low-risk -0.011.
+
 ### What is still a skeleton
 
 Per `PROGRESS.md` (the source of truth for status), these are placeholders that compile but do not work end-to-end — do not wire them into a path the user actually invokes:
@@ -115,7 +132,7 @@ Everything else listed in `docs/CausalCredit_完整实现计划书.md` §4.1–4
 
 ## Test layout
 
-164 tests across 24 files (~10s):
+181 tests across 26 files (~10s):
 
 | Test file | Cases | What it covers |
 |-----------|------:|----------------|
@@ -126,6 +143,8 @@ Everything else listed in `docs/CausalCredit_完整实现计划书.md` §4.1–4
 | `test_shap.py` | 6 | TreeSHAP + 4-quadrant + subgroup SHAP |
 | `test_decision.py` | 5 | DecisionAdvisor + evidence chain |
 | `test_decision_fairness.py` | 3 | `build_fairness_block` + bias detection (M8.1c) |
+| `test_causal_narrative.py` | 13 | 3-level narrative (model/cohort/individual) + DAG paths + robustness (M8.2a-d) |
+| `test_narrative_visualize.py` | 4 | Waterfall + 3-panel card (M8.2e) |
 | `test_aggregation.py` | 16 | Bureau / prev / POS / INST / CC aggregators |
 | `test_train.py` | 7 | LightGBM GPU/Optuna toggle, `_resolve_device` |
 | `test_fraud_three_class.py` | 7 | Pseudo-labels + 4-class model + `fraud_score` |

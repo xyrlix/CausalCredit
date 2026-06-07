@@ -929,6 +929,97 @@ def run() -> int:
 
     _t(t_step, "step_15_fairness", step_times)
 
+    # =========================================================================
+    # STEP 16 — CAUSAL NARRATIVE (3-level: model / cohort / individual)  M8.2
+    # =========================================================================
+    print_section("STEP 16: CAUSAL NARRATIVE (model / cohort / individual)")
+    t_step = time.time()
+
+    from src.explain.causal_narrative import CausalNarrative
+    from src.explain.narrative_visualize import render_all as render_narrative_charts
+
+    # Pre-compute global SHAP for the model-level narrative (use a 5K sample
+    # for speed; small enough that SHAP is <2s, big enough to be stable).
+    print("  Pre-computing global SHAP on a 5K test subsample...")
+    import shap as _shap
+    narr_shap_idx = np.random.default_rng(1).choice(len(X_test), size=min(5000, len(X_test)), replace=False)
+    narr_expl = _shap.TreeExplainer(lgbm_model)
+    narr_global_sv = narr_expl.shap_values(X_test.iloc[narr_shap_idx])
+    if isinstance(narr_global_sv, list):
+        narr_global_sv = narr_global_sv[1]
+
+    # Predict on a train subsample for the cohort-level KNN
+    print("  Computing train predictions for cohort-level KNN (50K subsample)...")
+    narr_train_idx = np.random.default_rng(2).choice(len(X_train), size=min(50000, len(X_train)), replace=False)
+    y_prob_train = lgbm_model.predict_proba(X_train.iloc[narr_train_idx])[:, 1]
+    X_train_narr = X_train.iloc[narr_train_idx]
+
+    # Use the discovered DAG for causal-path tracing (fallback to domain DAG).
+    print("  Building 3-level narrative for each selected applicant...")
+    narr_dag = globals().get("fused_dk", None) or globals().get("fused", None) or globals().get("domain_dag", None)
+    if narr_dag is None:
+        # Build a networkx DiGraph from the HomeCreditCausalGraph edges
+        import networkx as nx
+        hcg = HomeCreditCausalGraph()
+        narr_dag = nx.DiGraph()
+        narr_dag.add_nodes_from(hcg.nodes.keys())
+        narr_dag.add_edges_from(hcg.edges)
+    narrative_engine = CausalNarrative(
+        model=lgbm_model,
+        feature_names=list(X_test.columns),
+        dag=narr_dag,
+        outcome_name="TARGET",
+    )
+
+    narrative_per_applicant: List[Dict] = []
+    for r, pos in zip(decision_reports, selected_positions):
+        feats = {k: float(v) for k, v in X_test.iloc[pos].to_dict().items()}
+        # Per-applicant SHAP row
+        sv_one = narr_expl.shap_values(X_test.iloc[pos:pos + 1])
+        if isinstance(sv_one, list):
+            sv_one = sv_one[1]
+        shap_row = sv_one[0]
+        full_narr = narrative_engine.build_full_narrative(
+            features=feats,
+            shap_row=shap_row,
+            shap_global=narr_global_sv,
+            X_train=X_train_narr,
+            y_prob_train=y_prob_train,
+            four_quadrant=fq,
+            run_robustness=True,
+        )
+        full_narr["applicant_id"] = r["applicant_id"]
+        narrative_per_applicant.append(full_narr)
+        # Inject into decision report
+        r["causal_narrative_v2"] = full_narr
+        # Save updated JSON
+        json_path = output_dec / f"{r['applicant_id']}.json"
+        with open(json_path, "w") as f:
+            json.dump(r, f, indent=2, ensure_ascii=False)
+        # Append narrative section to markdown
+        md_path = output_dec / f"{r['applicant_id']}.md"
+        if md_path.exists():
+            existing = md_path.read_text(encoding="utf-8")
+            narr_md = CausalNarrative.render_markdown(full_narr)
+            with open(md_path, "w", encoding="utf-8") as f:
+                f.write(existing + "\n\n" + narr_md)
+        # Per-applicant charts
+        chart_paths = render_narrative_charts(
+            full_narr, str(output_fig), applicant_id=r["applicant_id"]
+        )
+        print(f"    {r['applicant_id']}: stability={full_narr['robustness']['stability_score']:.2f}, "
+              f"cohort Δ={full_narr['cohort_level']['delta']:+.4f}, "
+              f"charts={len(chart_paths)}")
+
+    # High-risk applicant gets the headline global charts (15, 16)
+    headline = narrative_per_applicant[-1]  # last applicant = highest P(default)
+    headline_paths = render_narrative_charts(
+        headline, str(output_fig), applicant_id=headline["applicant_id"]
+    )
+    print(f"  Wrote {len(headline_paths)} headline narrative charts for {headline['applicant_id']}")
+
+    _t(t_step, "step_16_narrative", step_times)
+
     # Pipeline summary
     summary = {
         "model": {
@@ -986,6 +1077,20 @@ def run() -> int:
             "ref_dist": drift_result["ref_dist"],
             "cur_dist": drift_result["cur_dist"],
         },
+        "narrative": {
+            "applicants": [
+                {
+                    "applicant_id": n["applicant_id"],
+                    "model_top1": n["model_level"]["top_features"][0]["feature"] if n["model_level"]["top_features"] else None,
+                    "cohort_delta": n["cohort_level"]["delta"],
+                    "stability_score": n["robustness"]["stability_score"],
+                    "n_trusted": n["individual_level"]["n_trusted"],
+                    "n_untrusted": n["individual_level"]["n_untrusted"],
+                    "n_masked": n["individual_level"]["n_masked"],
+                }
+                for n in narrative_per_applicant
+            ],
+        },
         "decision_reports": [
             {"applicant_id": r["applicant_id"], "score": r["score"], "risk_grade": r["risk_grade"]}
             for r in decision_reports
@@ -1008,6 +1113,11 @@ def run() -> int:
     print(f"  Refutation: robustness={robustness:.2f}")
     fraud_print = ", ".join(f"{k}={v}" for k, v in routing_counts.to_dict().items())
     print(f"  Anti-fraud: {fraud_print}")
+    print(f"  Fairness:  verdict={fairness_blocks[0]['verdict']}  violated={len(fairness_blocks[0]['violated_slices'])}/4 slices")
+    if narrative_per_applicant:
+        stabilities = [n["robustness"]["stability_score"] for n in narrative_per_applicant]
+        print(f"  Narrative: {len(narrative_per_applicant)} applicants  "
+              f"mean_stability={np.mean(stabilities):.2f}")
     print(f"  Decision: {len(decision_reports)} reports -> {output_dec}")
     print()
     print("  per-step timings (s):")

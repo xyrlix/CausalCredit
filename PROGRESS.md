@@ -1,11 +1,11 @@
 # CausalCredit 开发进展记录
 
 > **最后更新**: 2026-06-06 | **环境**: CPU (Python 3.11, `ldq_cc` conda env)  
-> **状态**: 9 个里程碑全部完成 ✅ (M0-M7 + M8.1 公平性 + 反欺诈升级)
+> **状态**: 10 个里程碑全部完成 ✅ (M0-M7 + M8.1 公平性 + M8.2 因果叙事深化)
 
 ---
 
-## 总览：8 个里程碑全部交付 (M0-M7 + M8.1)
+## 总览：10 个里程碑全部交付 (M0-M7 + M8.1 + M8.2)
 
 | 里程碑 | 目标 | 状态 | 关键产出 |
 |:---:|------|:---:|------|
@@ -19,6 +19,7 @@
 | **M6** | **GPU LightGBM + Optuna** | ✅ | **LightGBM GPU build 接入 (默认关闭) + Optuna 9 维超参搜索 (默认关闭), 2 个可选杠杆** |
 | **M7** | **反欺诈三件套** | ✅ | **三分类子模型 (fraudulent/non_malicious/systemic) + 包装资质因果一致性检测 + 养流水因果去噪评分, 14 步 / 14 图 / 25 新测试** |
 | **M8.1** | **公平性审计 + 反欺诈升级** | ✅ | **3 项公平性指标 (DP/EO/DI) + 4 个默认切片 + 3 张公平性图 + FraudGuardConfig 数据类 (YAML 配置) + 路由分布 PSI 监控, 15 步 / 17 图 / 31 新测试** |
+| **M8.2** | **因果叙事深化** | ✅ | **三层叙事引擎 (model/cohort/individual) + DAG 路径追溯 + K-NN k=10 同类对照 + 解释稳健性扰动 + 因果瀑布图 + 三联叙事卡, 16 步 / 19 图 / 17 新测试** |
 
 ---
 
@@ -32,6 +33,7 @@
 | 4 | `76b3ff3` | 自动生成 5 张可视化图表 |
 | 5 | `815baef` | 开发进展记录 - CPU 环境完成 |
 | 6 | (M8.1) | **公平性审计 + 反欺诈升级 (3 文件 / 31 测试 / 3 张图 / STEP 15)** |
+| 7 | (M8.2) | **因果叙事深化 (2 文件 / 17 测试 / 2 张图 / STEP 16)** |
 
 > M0-M4 完整代码在 main 分支。后续每个里程碑均经 `python -m src.run_pipeline` 验证 + 单测全过。
 
@@ -353,7 +355,10 @@ X_train, X_test = X_train[keep], X_test[keep]
 | CATE × 3 方法 | ~15s | 8K 子集 |
 | SHAP TreeSHAP | ~10s | 50K 训练集 |
 | DiCE NSGA-II | < 1s/样本 | 3 样本 |
-| **Pipeline 总耗时** | **~75s** | CPU 即可 |
+| 反欺诈三件套 (FraudGuard) | ~35s | 训练 50K + 1K 批量 + 3 张图 |
+| 公平性切片 (4 维度 × 50K) | ~1s | 30K 测试集 |
+| 因果叙事 (3 申请人 × 4 段) | ~8s | 5K 全局 SHAP + 60 次扰动 |
+| **Pipeline 总耗时** | **~220s** | 16 步端到端, CPU 即可 |
 
 ---
 
@@ -659,6 +664,55 @@ PROCEED             干净
 
 ---
 
+## M8.2 — 因果叙事深化 ✅
+
+**目标**: 决策报告从 "1 句话 (主要驱动因素 + 异质效应)" 升级到 "3 层叙事 (model / cohort / individual) + 因果路径 + 解释稳健性", 直接回答监管/合规场景下 "challenge the decision" 的 3 个标准问题. 详见 `docs/CausalCredit_M8.2_因果叙事深化实现记录.md`.
+
+### 子任务分解
+
+| 子任务 | 文件 | 测试 |
+|---|---|---|
+| M8.2a 多层级叙事生成器 | `src/explain/causal_narrative.py` (CausalNarrative 类) | (含 13) |
+| M8.2b 因果路径追溯 | `trace_causal_path` (BFS) + `features_on_paths_to_outcome` | (含 13) |
+| M8.2c K-NN 同类申请人对照 | `cohort_level_narrative` (KNN k=10, z-score 偏差) | (含 13) |
+| M8.2d 解释稳健性扰动 | `explanation_robustness` (20× ±10% 高斯噪声) | (含 13) |
+| M8.2e 叙事可视化 | `src/explain/narrative_visualize.py` (因果瀑布图 + 三联叙事卡) | 4 |
+| M8.2f 集成 + 文档 | `src/run_pipeline.py` STEP 16 | — |
+
+**测试增量**: 164 → 181 (+17), 测试文件 24 → 26
+
+### 关键产出
+
+| 项目 | 数值 |
+|---|---|
+| Pipeline 总步数 | 15 → **16** (+NARRATIVE) |
+| 图表总数 | 17 → **19** (+2 叙事图) |
+| Pipeline 总耗时 | 212s → **219.5s** (narrative 计算 7.5s) |
+
+### STEP 16 实测输出 (3 个申请人对照)
+
+| 申请人 | 等级 | P(default) | cohort Δ | 主导特征 | 主导路径 | stability | 业务解读 |
+|---|---|---:|---:|---|---|---:|---|
+| HC_006355 | E (高) | 89.55% | **+0.60** | EXT_SOURCE_2 | EXT_SOURCE_2 → TARGET | **0.94** | 单一主导, 解释极稳定, 远高于 cohort |
+| HC_036837 | A (边界) | 4.88% | -0.026 | EXT_SOURCE_2 | EXT_SOURCE_2 → TARGET | 0.34 | 与 cohort 类似, 解释 moderately robust |
+| HC_023041 | A (低) | 0.26% | -0.011 | DAYS_EMPLOYED | DAYS_EMPLOYED → TARGET | **0.20** | 无强主导, 解释 fragile, top-1 在扰动下 70% 换位 |
+
+**关键发现**:
+- **高风险 ↔ 稳定解释**: 单一 EXT_SOURCE_2 极值驱动 → top-1 不会漂 (stability=0.94)
+- **低风险 ↔ fragile 解释**: 无强主导特征 → top-3 在小扰动下大量换位 (stability=0.20)
+- **cohort Δ 与风险等级强正相关**: 高风险 +0.60, 中/低 ≈ -0.02, 无需 SHAP 就能 outlier 化
+
+### 决策报告新字段 (`causal_narrative_v2`)
+
+每份 JSON 增 4 段: `model_level` (top-3 mean |SHAP|) / `cohort_level` (KNN k=10 + Δ + top-5 z 偏差) / `individual_level` (top-5 + DAG paths + 4 象限计数) / `robustness` (top-1 / top-3 stable, 解释强度档). `.md` 报告追加对应 4 段中文标题 (模型层面 / 同类申请人对照 / 本申请人 / 解释稳健性).
+
+### 2 张新图
+
+- `15_causal_waterfall.png` — top features 横向条形图, 颜色按 4 象限 (TRUSTED 绿 / UNTRUSTED 红 / MASKED 橙 / NEGLIGIBLE 灰)
+- `16_narrative_card.png` — 3 个并排文本面板 (蓝/黄/绿背景) 给非技术审阅者 (合规 / 运营) 一眼看懂
+
+---
+
 ## 后续迭代方向（未做）
 
 - ~~8 表 JOIN（bureau / previous_application / POS / installments / credit_card）→ 多表因果特征~~ ✅ M5 完成
@@ -666,7 +720,7 @@ PROCEED             干净
 - ~~Optuna 超参调优~~ ✅ M6 完成（接入, 默认关闭, 实测 Home Credit 上不显著）
 - ~~反欺诈三件套（三分类 + 包装资质 + 养流水去噪）~~ ✅ M7 完成
 - ~~公平性审计 + 反欺诈阈值可配置 + 路由漂移监控~~ ✅ M8.1 完成
-- **M8.2**: 因果叙事深化 (讲好"为什么高", 群组级 confounder 归因)
+- ~~因果叙事深化（三层 model/cohort/individual + DAG 路径 + 解释稳健性）~~ ✅ M8.2 完成
 - **M8.3**: 完整服务化 (FastAPI 端点 + Streamlit 4 页填实 + PSI 后台任务)
 - **M8.4**: 多语言 + 港式本地化 (粤语 / 繁体 / 香港场景)
 - 实时推理服务（gRPC / ONNX Runtime）
@@ -684,18 +738,19 @@ CausalCredit/
 │   ├── features/                 # ✅ builder + causal_features + aggregator
 │   ├── causal/                   # ✅ graph / estimate / discovery / cate / refute
 │   ├── models/                   # ✅ train (LightGBM + GBT + GPU/Optuna) / evaluate / calibrate
-│   ├── explain/                  # ✅ shap_explain / counterfactual / decision / evidence
+│   ├── explain/                  # ✅ shap_explain / counterfactual / decision / evidence / M8.2 causal_narrative + narrative_visualize
 │   ├── fraud/                    # ✅ M7 三件套: three_class + packaging + denoising + pipeline
+│   ├── fairness/                 # ✅ M8.1 metrics + slicing + visualize
 │   ├── api/                      # ✅ app / routes / services / dependencies / schemas
 │   ├── frontend/                 # ✅ app.py + 4 pages
-│   ├── monitoring/               # ✅ drift_detector
-│   └── run_pipeline.py           # ✅ 14 步入口
-├── tests/                        # ✅ 19 文件 / 133 用例
+│   ├── monitoring/               # ✅ drift_detector (含 M8.1e routing_drift)
+│   └── run_pipeline.py           # ✅ 16 步端到端入口
+├── tests/                        # ✅ 26 文件 / 181 用例
 ├── configs/                      # ✅ config.yaml
 ├── scripts/                      # ✅ run_api / run_demo / run_tests / setup_env
 ├── data/                         # ✅ Home Credit + German Credit
-├── output/                       # ✅ figures (14) + decision_reports (3) + demo_m1 (9) + models
-├── docs/                         # 11 份原始分析文档
+├── output/                       # ✅ figures (19) + decision_reports (3) + demo_m1 (9) + models
+├── docs/                         # 12 份分析文档 (含 M7/M8.1/M8.2 实现记录)
 ├── CLAUDE.md                     # 给 Claude Code 的协作指引
 ├── PROGRESS.md                   # 本文件
 ├── README.md                     # 项目说明

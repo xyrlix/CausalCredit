@@ -1,6 +1,6 @@
 {
   "applicant_id": "HC_006355",
-  "timestamp": "2026-06-06T14:23:17.489598Z",
+  "timestamp": "2026-06-06T14:53:30.830108Z",
   "default_probability": 0.8955,
   "score": 319,
   "risk_grade": "E",
@@ -127,5 +127,136 @@
     "routing_reasons": [
       "packaging_score=0.370 in [0.30, 0.50) borderline"
     ]
+  },
+  "causal_narrative_v2": {
+    "model_level": {
+      "top_features": [
+        {
+          "feature": "EXT_SOURCE_2",
+          "mean_abs_shap": 0.3012479629933438
+        },
+        {
+          "feature": "EXT_SOURCE_3",
+          "mean_abs_shap": 0.289104780945538
+        },
+        {
+          "feature": "EXT_SOURCE_1",
+          "mean_abs_shap": 0.15470198735159293
+        }
+      ],
+      "narrative": "At the model level, P(default) for the average applicant is driven primarily by EXT_SOURCE_2 (mean |SHAP|=0.3012), followed by EXT_SOURCE_3 (0.2891) and EXT_SOURCE_1 (0.1547). These three features account for the bulk of all decisions.",
+      "feature_summary": "EXT_SOURCE_2 (0.3012), EXT_SOURCE_3 (0.2891), EXT_SOURCE_1 (0.1547)"
+    },
+    "cohort_level": {
+      "k": 10,
+      "cohort_mean_p_default": 0.29484249268170337,
+      "applicant_p_default": 0.8954881698080307,
+      "delta": 0.6006456771263273,
+      "top_deviations": [
+        {
+          "feature": "POS_DPD_DEF_FLAG_FRAC",
+          "z": 6.295,
+          "applicant": 0.2857142857142857,
+          "cohort_mean": 0.04303030303030303
+        },
+        {
+          "feature": "NAME_HOUSING_TYPE",
+          "z": 4.227,
+          "applicant": 5.0,
+          "cohort_mean": 1.0
+        },
+        {
+          "feature": "BUREAU_TYPE_MICROLOAN_FRAC",
+          "z": 2.976,
+          "applicant": 0.7857142857142857,
+          "cohort_mean": 0.6530411255411256
+        },
+        {
+          "feature": "POS_DPD_FLAG_FRAC",
+          "z": 2.913,
+          "applicant": 0.2857142857142857,
+          "cohort_mean": 0.06405594405594406
+        },
+        {
+          "feature": "EXT_SOURCE_2",
+          "z": -2.147,
+          "applicant": 0.0119977231302305,
+          "cohort_mean": 0.4243383656095953
+        }
+      ],
+      "narrative": "Among the 10 training applicants most similar to this one, the average P(default) is 29.48%, so this applicant's P(default) of 89.55% is noticeably higher than the cohort (Δ=+0.6006). The applicant deviates most from the cohort in: POS_DPD_DEF_FLAG_FRAC (z=+6.29), NAME_HOUSING_TYPE (z=+4.23), BUREAU_TYPE_MICROLOAN_FRAC (z=+2.98)."
+    },
+    "individual_level": {
+      "top_features": [
+        {
+          "feature": "EXT_SOURCE_2",
+          "value": 0.0119977231302305,
+          "shap": 0.9424558317127559,
+          "quadrant": "TRUSTED",
+          "direction": "increases_default",
+          "dag_paths": [
+            [
+              "EXT_SOURCE_2",
+              "TARGET"
+            ]
+          ],
+          "n_paths": 1
+        },
+        {
+          "feature": "EXT_SOURCE_3",
+          "value": 0.2127563054543414,
+          "shap": 0.537303332759906,
+          "quadrant": "TRUSTED",
+          "direction": "increases_default",
+          "dag_paths": [],
+          "n_paths": 0
+        },
+        {
+          "feature": "EXT_SOURCE_1",
+          "value": 0.0914548792675788,
+          "shap": 0.45615139363675794,
+          "quadrant": "TRUSTED",
+          "direction": "increases_default",
+          "dag_paths": [],
+          "n_paths": 0
+        },
+        {
+          "feature": "BUREAU_TYPE_MICROLOAN_FRAC",
+          "value": 0.7857142857142857,
+          "shap": 0.4193144166413236,
+          "quadrant": "TRUSTED",
+          "direction": "increases_default",
+          "dag_paths": [],
+          "n_paths": 0
+        },
+        {
+          "feature": "PREV_STATUS_REFUSED_FRAC",
+          "value": 0.5,
+          "shap": 0.29251781239547603,
+          "quadrant": "TRUSTED",
+          "direction": "increases_default",
+          "dag_paths": [],
+          "n_paths": 0
+        }
+      ],
+      "narrative": "The dominant risk driver is EXT_SOURCE_2 (SHAP=+0.9425, quadrant=TRUSTED). In the causal DAG this feature reaches TARGET via: EXT_SOURCE_2 → TARGET. 5 are TRUSTED (model and causal both agree).",
+      "dominant_feature": "EXT_SOURCE_2",
+      "dominant_dag_path": [
+        "EXT_SOURCE_2",
+        "TARGET"
+      ],
+      "n_trusted": 5,
+      "n_untrusted": 0,
+      "n_masked": 0
+    },
+    "robustness": {
+      "n_perturbations": 20,
+      "noise_frac": 0.1,
+      "top_1_stable": 1.0,
+      "top_3_stable": 0.85,
+      "stability_score": 0.94,
+      "interpretation": "Explanation is robust (stability=0.94)."
+    },
+    "applicant_id": "HC_006355"
   }
 }

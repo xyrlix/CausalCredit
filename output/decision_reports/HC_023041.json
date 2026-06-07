@@ -1,6 +1,6 @@
 {
   "applicant_id": "HC_023041",
-  "timestamp": "2026-06-06T14:23:17.284689Z",
+  "timestamp": "2026-06-06T14:53:30.660407Z",
   "default_probability": 0.0026,
   "score": 848,
   "risk_grade": "A",
@@ -127,5 +127,141 @@
     "routing_reasons": [
       "packaging_score=0.370 in [0.30, 0.50) borderline"
     ]
+  },
+  "causal_narrative_v2": {
+    "model_level": {
+      "top_features": [
+        {
+          "feature": "EXT_SOURCE_2",
+          "mean_abs_shap": 0.3012479629933438
+        },
+        {
+          "feature": "EXT_SOURCE_3",
+          "mean_abs_shap": 0.289104780945538
+        },
+        {
+          "feature": "EXT_SOURCE_1",
+          "mean_abs_shap": 0.15470198735159293
+        }
+      ],
+      "narrative": "At the model level, P(default) for the average applicant is driven primarily by EXT_SOURCE_2 (mean |SHAP|=0.3012), followed by EXT_SOURCE_3 (0.2891) and EXT_SOURCE_1 (0.1547). These three features account for the bulk of all decisions.",
+      "feature_summary": "EXT_SOURCE_2 (0.3012), EXT_SOURCE_3 (0.2891), EXT_SOURCE_1 (0.1547)"
+    },
+    "cohort_level": {
+      "k": 10,
+      "cohort_mean_p_default": 0.01388409229144245,
+      "applicant_p_default": 0.002609716570138044,
+      "delta": -0.011274375721304407,
+      "top_deviations": [
+        {
+          "feature": "PREV_AMT_DOWN_PAYMENT_MIN",
+          "z": 3.47,
+          "applicant": 79438.5,
+          "cohort_mean": 18364.95
+        },
+        {
+          "feature": "BUREAU_AMT_CREDIT_SUM_LIMIT_MAX",
+          "z": 3.436,
+          "applicant": 290268.0,
+          "cohort_mean": 18369.477
+        },
+        {
+          "feature": "PREV_AMT_GOODS_PRICE_MIN",
+          "z": 3.009,
+          "applicant": 529578.0,
+          "cohort_mean": 205376.85
+        },
+        {
+          "feature": "BUREAU_AMT_CREDIT_SUM_LIMIT_SUM",
+          "z": 2.86,
+          "applicant": 290268.0,
+          "cohort_mean": 18846.400499999996
+        },
+        {
+          "feature": "DAYS_EMPLOYED",
+          "z": -2.771,
+          "applicant": -13356.0,
+          "cohort_mean": -6997.8
+        }
+      ],
+      "narrative": "Among the 10 training applicants most similar to this one, the average P(default) is 1.39%, so this applicant's P(default) of 0.26% is in line with the cohort (Δ=-0.0113). The applicant deviates most from the cohort in: PREV_AMT_DOWN_PAYMENT_MIN (z=+3.47), BUREAU_AMT_CREDIT_SUM_LIMIT_MAX (z=+3.44), PREV_AMT_GOODS_PRICE_MIN (z=+3.01)."
+    },
+    "individual_level": {
+      "top_features": [
+        {
+          "feature": "DAYS_EMPLOYED",
+          "value": -13356.0,
+          "shap": -0.5353289549114395,
+          "quadrant": "TRUSTED",
+          "direction": "decreases_default",
+          "dag_paths": [
+            [
+              "DAYS_EMPLOYED",
+              "TARGET"
+            ]
+          ],
+          "n_paths": 1
+        },
+        {
+          "feature": "EXT_SOURCE_2",
+          "value": 0.7825659299420509,
+          "shap": -0.46504812354058295,
+          "quadrant": "TRUSTED",
+          "direction": "decreases_default",
+          "dag_paths": [
+            [
+              "EXT_SOURCE_2",
+              "TARGET"
+            ]
+          ],
+          "n_paths": 1
+        },
+        {
+          "feature": "INST_NUM_INSTALMENT_VERSION_NUNIQUE",
+          "value": 15.0,
+          "shap": -0.27782569859262807,
+          "quadrant": "UNTRUSTED",
+          "direction": "decreases_default",
+          "dag_paths": [],
+          "n_paths": 0
+        },
+        {
+          "feature": "EXT_SOURCE_3",
+          "value": 0.6178261467332483,
+          "shap": -0.2223084034664508,
+          "quadrant": "TRUSTED",
+          "direction": "decreases_default",
+          "dag_paths": [],
+          "n_paths": 0
+        },
+        {
+          "feature": "PREV_AMT_ANNUITY_MEAN",
+          "value": 82366.965,
+          "shap": -0.1791208916946743,
+          "quadrant": "UNTRUSTED",
+          "direction": "decreases_default",
+          "dag_paths": [],
+          "n_paths": 0
+        }
+      ],
+      "narrative": "The dominant risk driver is DAYS_EMPLOYED (SHAP=-0.5353, quadrant=TRUSTED). In the causal DAG this feature reaches TARGET via: DAYS_EMPLOYED → TARGET. 2 of the top-5 features are UNTRUSTED (model says important, but no causal support); 3 are TRUSTED (model and causal both agree).",
+      "dominant_feature": "DAYS_EMPLOYED",
+      "dominant_dag_path": [
+        "DAYS_EMPLOYED",
+        "TARGET"
+      ],
+      "n_trusted": 3,
+      "n_untrusted": 2,
+      "n_masked": 0
+    },
+    "robustness": {
+      "n_perturbations": 20,
+      "noise_frac": 0.1,
+      "top_1_stable": 0.3,
+      "top_3_stable": 0.05,
+      "stability_score": 0.2,
+      "interpretation": "Explanation is fragile (stability=0.20); interpret with caution."
+    },
+    "applicant_id": "HC_023041"
   }
 }
