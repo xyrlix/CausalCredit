@@ -1,11 +1,11 @@
 # CausalCredit 开发进展记录
 
 > **最后更新**: 2026-06-07 | **环境**: CPU (Python 3.11, `ldq_cc` conda env)  
-> **状态**: 12 个里程碑全部完成 ✅ (M0-M7 + M8.1 公平性 + M8.2 因果叙事深化 + M8.3 服务化 + M8.4 多语言)
+> **状态**: 16 个里程碑全部完成 ✅ (M0-M7 + M8.1 公平性 + M8.2 因果叙事 + M8.3 服务化 + M8.4 多语言 + M8.5 系列 5 件 + M8.6 验证深化 4 件)
 
 ---
 
-## 总览：12 个里程碑全部交付 (M0-M7 + M8.1 + M8.2 + M8.3 + M8.4)
+## 总览：16 个里程碑全部交付
 
 | 里程碑 | 目标 | 状态 | 关键产出 |
 |:---:|------|:---:|------|
@@ -22,6 +22,11 @@
 | **M8.2** | **因果叙事深化** | ✅ | **三层叙事引擎 (model/cohort/individual) + DAG 路径追溯 + K-NN k=10 同类对照 + 解释稳健性扰动 + 因果瀑布图 + 三联叙事卡, 16 步 / 19 图 / 17 新测试** |
 | **M8.3** | **完整服务化** | ✅ | **FastAPI 5 端点 fill out (11 smoke test) + 路由 baseline 持久化** |
 | **M8.4** | **多语言 + 港式本地化** | ✅ | **render_markdown 加 zh-HK / en 参数, 港式措辞** |
+| **M8.5f** | **Oaxaca-Blinder 因果公平性分解** | ✅ | **`oaxaca_blinder_decomposition` (Blinder/Oaxaca threefold), 解释总 gap 中"特征差异"与"系数差异"占比, 16 测试** |
+| **M8.6a** | **TemporalGuard 数据泄漏防护** | ✅ | **scrub_secondary_tables 剔除 `MONTHS_BALANCE > 0` 行, validate_split 时间有序切分, 14 测试** |
+| **M8.6b** | **BLP 检验 (Best Linear Predictor)** | ✅ | **K-fold OLS Y ~ 1 + T + c_hat + c_hat·T, 检验 CATE 系数显著性, 17 测试** |
+| **M8.6c** | **CATE 稳定性 Tier1+Tier2** | ✅ | **30× split-half bootstrap + 10× hyperparameter grid, 17 测试, 顺手修复 CATEEstimator W=0 bug** |
+| **M8.6d** | **CCGS 因果验证金字塔** | ✅ | **4 层 L1-L4 复合评分 (GSI/DKCS/Refutation+BLP/CCR+Immutable/AUC+ECE+DP), 25 测试** |
 
 ---
 
@@ -34,10 +39,19 @@
 | 3 | `6f17d9f` | 完整端到端流水线（可运行） |
 | 4 | `76b3ff3` | 自动生成 5 张可视化图表 |
 | 5 | `815baef` | 开发进展记录 - CPU 环境完成 |
-| 6 | (M8.1) | **公平性审计 + 反欺诈升级 (3 文件 / 31 测试 / 3 张图 / STEP 15)** |
-| 7 | (M8.2) | **因果叙事深化 (2 文件 / 17 测试 / 2 张图 / STEP 16)** |
-| 8 | (M8.3) | **服务化补全: 11 API smoke test + 路由 baseline 持久化 + DAG 加 EXT_SOURCE 边** |
-| 9 | (M8.4) | **多语言: render_markdown 加 zh-HK / en, 4 测试** |
+| 6 | (M8.1) | 公平性审计 + 反欺诈升级 (3 文件 / 31 测试 / 3 张图 / STEP 15) |
+| 7 | (M8.2) | 因果叙事深化 (2 文件 / 17 测试 / 2 张图 / STEP 16) |
+| 8 | (M8.3) | 服务化补全: 11 API smoke test + 路由 baseline 持久化 + DAG 加 EXT_SOURCE 边 |
+| 9 | (M8.4) | 多语言: render_markdown 加 zh-HK / en, 4 测试 |
+| 10 | `34194f7` | M8.5c API 中间件三件套 (rate limit / API key / PII filter) |
+| 11 | `3cea845` | M8.5d Streamlit i18n (en / zh / zh-HK) |
+| 12 | `6a61ead` | M8.5e SHA-256 模型清单 + active_version provenance |
+| 13 | `3e9737d` | **M8.5f Oaxaca-Blinder 因果公平性分解** |
+| 14 | `bc15429` | M8.5g interest-rate optimizer + Streamlit demo page |
+| 15 | `be448e0` | **M8.6a TemporalGuard 数据泄漏防护 (MONTHS_BALANCE > 0)** |
+| 16 | `70079cd` | **M8.6b BLP 检验 (Best Linear Predictor)** |
+| 17 | `b476a20` | **M8.6c CATE 稳定性 Tier1+Tier2 + W=None bug 修复** |
+| 18 | `81d692a` | **M8.6d CCGS 因果验证金字塔 (4 层 + CCGS)** |
 
 > M0-M4 完整代码在 main 分支。后续每个里程碑均经 `python -m src.run_pipeline` 验证 + 单测全过。
 
@@ -717,6 +731,267 @@ PROCEED             干净
 
 ---
 
+## M8.5f — Oaxaca-Blinder 因果公平性分解 ✅
+
+### 动机
+
+M8.1 给出"模型对子群 A vs B 的 P(default) 差 X pp" — 但**X 里有多少是 A/B 真的特征差异 (legit) vs 多少是模型对子群的不同反应 (suspect bias)?** 标准答案是 Oaxaca (1973) / Blinder (1973) wage-decomposition。
+
+### 实现 (`src/fairness/oaxaca.py`)
+
+```
+OaxacaBlinderResult:
+    total_gap            = ȳ_A − ȳ_B
+    explained_gap        = (x̄_A − x̄_B) · β_ref   (Blinder 形式, β_ref=β_B)
+    unexplained_gap      = total − explained        (恒等式, 吸收截距差)
+    explained_share      = explained / total
+    unexplained_share    = unexplained / total
+    feature_contributions: DataFrame (feature, mean_a, mean_b, explained, unexplained)
+    discrimination_index = |unexplained| / (|explained| + |unexplained|)  ∈ [0, 1]
+```
+
+支持两种 reference: `"B"` (Blinder) / `"pooled"` (Oaxaca threefold) / `"A"`。
+
+### 关键设计
+
+1. **恒等式强制**: `unexplained = total − explained` (而不是公式重新展开), 保证 `total = explained + unexplained` 严格成立, 吸收截距差。
+2. **discrimination_index ∈ [0, 1]**: 用 `|unexplained| / (|explained| + |unexplained|)` (Neumark 1988 推荐形式), 避免单纯 `|unexplained| / |total|` 在 |explained| > |total| 时爆表。
+3. **UNKNOWN 排除**: `"UNKNOWN"` / `NaN` group 在分解前 drop, 避免一行缺失值翻盘结论。
+
+### 测试 (`tests/test_oaxaca.py` 16 用例)
+
+- Sanity: 合成 200 样本 (income A=200K, B=120K, default 信号 β_income=-8e-6), 跑分解:
+  - `total_gap` 为负 (A 比 B 风险低) ✓
+  - `|explained_gap| > |unexplained_gap|` (信号由"特征差异"驱动, 非"系数差异") ✓
+  - `explained + unexplained = total` 严格成立 ✓
+- Robustness: UNKNOWN / NaN 排除、显式 group_a/b、reference=pooled、5+ rows/group 校验
+- Visualization: 2-panel `plot_oaxaca_decomposition` (总 gap 条 + per-feature 瀑布)
+
+### 关键产出
+
+| 指标 | 数值 (合成数据) |
+|---|---:|
+| total_gap (A−B) | −0.32 |
+| explained_gap | −0.30 (94% 来自收入差异) |
+| unexplained_gap | −0.02 |
+| discrimination_index | 0.063 (低 — 模型无明显子群偏见) |
+| top feature | AMT_INCOME_TOTAL (|贡献|=0.28) |
+
+### 决策报告应用
+
+`build_full_fairness_report(X, y, groups)` 输出 `FairnessReport`:
+
+```json
+{
+  "group_a": "F", "group_b": "M",
+  "n_a": 8000, "n_b": 5000,
+  "total_gap": 0.018,
+  "explained_gap": 0.016, "unexplained_gap": 0.002,
+  "discrimination_index": 0.111,
+  "top_feature": "AMT_INCOME_TOTAL",
+  "verdict": "FAIR — gap mostly explained by legitimate feature differences"
+}
+```
+
+verdict 阈值: `discrimination_index < 0.30` → FAIR, `< 0.60` → WARNING, else UNFAIR。
+
+**总测试数**: 320 → 334 (+16)
+
+---
+
+## M8.6a — TemporalGuard 数据泄漏防护 ✅
+
+> **目标**: 防御 M5 多表聚合里"时间穿越"风险, 答辩/合规可答"训练时是否偷看了申请后数据?"。详见 `docs/CausalCredit_M8.6_因果验证深化实现记录.md` §3.1。
+
+### 动机
+
+`POS_CASH_balance` 和 `credit_card_balance` 用 `MONTHS_BALANCE` 编码相对申请时点的时间: `0`=申请当月, `-N`=历史, `+N`=**申请后 (LEAK)**。M5 引入 5 张二级表聚合时, 我们没剔除 `MONTHS_BALANCE > 0` 行, 等于让模型看到"申请后才知道"的真实还款表现, 制造 pseudo-AUC 虚高。
+
+### 实现 (`src/data/temporal_guard.py`)
+
+```
+TemporalGuard:
+    scrub_secondary_tables(tables) → (cleaned, TemporalGuardReport)
+        逐表剔除 MONTHS_BALANCE > 0 的行, 发出 TemporalIssue (EXCLUDED)
+    validate_split(df, date_col, train_ratio) → df with split ∈ {train, test}
+        按 date_col 排序切分, 保证 train.max < test.min (无重叠)
+    check_split_overlap(df, date_col) → Optional[TemporalIssue]
+        若 train.max >= test.min 返回 TEMPORAL_OVERLAP WARNING
+```
+
+`TemporalGuardReport.passed` 在所有 issue 都是 EXCLUDED (无 WARNING) 时为 True。
+
+### 集成
+
+在 `src/features/aggregation.py::load_or_build_secondary_features` 中, 5 张二级表 parquet 读出后**第一件事**就是过 TemporalGuard:
+
+```python
+from src.data.temporal_guard import TemporalGuard
+guard = TemporalGuard()
+secondary_raw, temporal_report = guard.scrub_secondary_tables(secondary_raw)
+for issue in temporal_report.issues:
+    print(f"  [temporal-guard] {issue.type} table={issue.table} removed={issue.count}")
+```
+
+`SECONDARY_FEATURES_CACHE_VERSION` 1 → 2, 自动失效旧 cache。
+
+### 关键设计
+
+1. **结构化 issue 列表** (非日志字符串): pipeline 后续步骤可程序化读取 `report.issues[i].type / count / ratio / action`。
+2. **EXCLUDED vs WARNING 双状态**: MONTHS_BALANCE 剔除是"静默修复" (EXCLUDED, 不算 fail); train/test 时间重叠是"硬错误" (WARNING, fail)。
+3. **pass 语义**: `passed = all(issue.action != "WARNING")` — 修复类操作不破坏 pass 标志, 真正的泄漏才算 fail。
+
+### 测试 (`tests/test_temporal_guard.py` 14 用例)
+
+- 4 类: TestScrubSecondaryTables (6) / TestValidateSplit (3) / TestCheckSplitOverlap (3) / TestReportSerialization (2)
+- 覆盖: 3/10 行被剔除 / 干净表无 issue / 无时间列表 pass-through / 空 DF / 序列化
+
+**总测试数**: 334 → 351 (+14)
+
+---
+
+## M8.6b — BLP 检验 (Best Linear Predictor) ✅
+
+> **目标**: 给出 CATE 异质性预测的显著性证据, 应答"模型真的有信号吗? 还是常数 0?"。详见 `docs/CausalCredit_M8.6_因果验证深化实现记录.md` §3.2。
+
+### 动机
+
+CATE 异质性估计算出来 ±0.001 量级, 评审问"这个 CATE 模型真的有信号吗? 还是常数 0?" — 标准答案: Chernozhukov et al. (2018) **Best Linear Predictor (BLP) test**。K-fold 交叉验证得到 out-of-fold CATE 预测, 然后 OLS Y ~ 1 + T + c_hat + c_hat·T, 检验 c_hat 系数 p<0.05。
+
+### 实现 (`src/causal/blp_test.py`)
+
+```
+BLPTest.run(Y, T, X, W) → BLPResult
+    n_folds (default 5)
+    method ∈ {LinearDML, SparseLinearDML, CausalForestDML}
+    alpha (default 0.05)
+    ↓
+    _cross_val_cate: K-fold refit, 输出 (n,) c_hat
+    _fit_blp_regression: OLS, β_c_hat, SE, t, p
+    ↓
+    BLPResult {blp_coef, blp_se, blp_t_stat, blp_p_value, pass_at_05, pass_at_10, design_coefs, design_se, cate_summary}
+```
+
+复用 `CATEEstimator` 的 3 种 DML backend (LinearDML 默认), 可选 forest backend 抓非线性异质。
+
+### 关键设计
+
+1. **K-fold 重新拟合**: 每个 fold 重新 fit CATE, 不是 in-sample predict — 避免数据泄漏污染 BLP 检验。
+2. **OLS 索引约定**: `LinearRegression(fit_intercept=True)` 自动添加截距, 用户的 design 不应有 1s 列 (会被 sklearn "吸收" 成 `intercept_`, 同时 `coef_[0]=0` 噪音)。`coef_[0..2]` 对应 [T, c_hat, c_hat·T]。
+3. **W=None 兼容性**: 顺手修一个潜在 bug — `CATEEstimator.fit_dml(W=None)` 之前会传 (n, 0) 给 econml 0.16, 触发 "Found array with 0 feature(s) … minimum of 1 is required" 异常。修复: W=None 时**完全省略** W 关键字, 让 econml 走默认路径。
+
+### 测试 (`tests/test_blp_test.py` 17 用例)
+
+- Sanity: 合成 1500 样本 (X[:,0] 同时是 confounder + heterogeneity driver), 期望 BLP p < 0.05 ✓
+- Robustness: 长度不匹配 / n_folds=1 / 非法 method / 非法 alpha / n<2·n_folds / to_dict roundtrip / pass_at_10 ≥ pass_at_05
+- Method variation: LinearDML / SparseLinearDML / CausalForestDML 三种 backend
+- Visualization: `plot_blp_test` 2-panel 图 (系数条 + 摘要)
+
+**总测试数**: 351 → 368 (+17)
+
+---
+
+## M8.6c — CATE 稳定性 Tier1+Tier2 ✅
+
+> **目标**: 用 Oracle P0 配方抓"切样本"和"换超参"两个方向的 CATE 稳定性。详见 `docs/CausalCredit_M8.6_因果验证深化实现记录.md` §3.3。
+
+### 动机
+
+CATE 模型在 30K 子集上 ρ=0.81, 但换个随机子集 / 换套超参 ρ 还稳吗? 业界标准: **Oracle P0 / CausalBench** 的双层稳定性测试 — Tier1 split-half bootstrap + Tier2 hyperparameter sensitivity。
+
+### 实现 (`src/causal/stability.py`)
+
+```
+CATEStabilityTester.run(Y, T, X) → StabilityResult
+    method (default LinearDML)
+    n_bootstrap (default 30)
+    n_configs (default 10)
+    tier1_threshold (default 0.80)
+    tier2_threshold (default 0.70)
+    ↓
+    tier1_split_half:
+        for _ in 30:
+            把数据随机分两半 → 各 fit 一次 CATE → 各自 predict
+            → Spearman ρ
+        mean ρ → pass?
+    tier2_hyperparameter_sensitivity:
+        10 组 (max_depth, n_estimators, min_samples_leaf) 配置
+        → 各 fit 一次 → 45 个 pairwise Spearman
+        → min ρ → pass?
+```
+
+### 关键设计
+
+1. **Tier1 拆半预测**: 用 `CATEEstimator.fit_dml` 在每半上 fit, 在各自半上 predict, Spearman 比较两个 CATE 序列。复刻 Oracle P0 配方。
+2. **Tier2 配置网格**: max_depth ∈ {3,4,5,6}, n_estimators ∈ {60,80,100,120,140,160}, min_samples_leaf ∈ {5,6,20}。第一阶段 GBR 强相关超参, 验证 CATE 终估计对 nuisance 模型选择不敏感。
+3. **复用 CATEEstimator**: Tier1 走标准 `fit_dml`; Tier2 因为要换 first-stage 模型, 直接用 `econml.dml.LinearDML` + 自定义 `GradientBoostingRegressor`。
+4. **顺手修 W=None bug** (同 M8.6b): `CATEEstimator.fit_dml / fit_dr / fit_causal_forest` 三处都改成 "W=None 时省略 W 关键字"。
+
+### 测试 (`tests/test_stability.py` 17 用例)
+
+- Sanity: 跑通后 summary 含 "STABLE" / "UNSTABLE" / 方法名 / 4 段标识
+- Tier1: 5/30/任意次 bootstrap 都返回合法 dict, 强信号 DGP 上 mean ρ > 0
+- Tier2: 5 configs → C(5,2)=10 pairs, 每对含 (i, j, spearman, config_i, config_j)
+- Robustness: 长度不匹配 / n<100 / 非法 n_bootstrap / 非法 n_configs
+
+**总测试数**: 368 → 385 (+17)
+
+---
+
+## M8.6d — CCGS 因果验证金字塔 ✅
+
+> **目标**: 把 M8.6a/b/c + 现有 refutation/BLP/反事实/欺诈/公平性 — 验证输出散落在 8 个不同模块这件事收口成 1 个 0-1 复合分。详见 `docs/CausalCredit_M8.6_因果验证深化实现记录.md`。
+
+### 动机
+
+M8.6a/b/c + 现有 4 类 refutation + 反事实/欺诈/公平性 — 验证输出散落在 8 个不同模块, 评审/合规想看"你的模型到底可不可信"得自己拼图。**CCGS (Composite Causal Grade Score)** 把所有验证输出收口到 1 个 0-1 的复合分数 + 4 个分量。
+
+### 实现 (`src/causal/verification.py`)
+
+```
+                ┌─────────────────────────────┐
+                │  L4  E2E Validation         │   0.20
+                │   (AUC, ECE, Demographic P) │
+                ├─────────────────────────────┤
+                │  L3  Counterfactual         │   0.25
+                │   (CCR, Immutable)          │
+                ├─────────────────────────────┤
+                │  L2  Effect Validation      │   0.30
+                │   (Refutation + BLP + CATE) │
+                ├─────────────────────────────┤
+                │  L1  Graph Validation       │   0.25
+                │   (GSI, DKCS)               │
+                └─────────────────────────────┘
+
+   CCGS = 0.25·L1 + 0.30·L2 + 0.25·L3 + 0.20·L4
+   pass: CCGS ≥ 0.70 AND all_layers_pass   ← 双门控, 防一好遮百丑
+```
+
+**L1 Graph**: GSI = mean Jaccard(bootstrap ∩ ref_DAG), DKCS = per-edge 确认率, L1 = mean(GSI, DKCS)。
+**L2 Effect**: 5 tests (placebo / subset / sensitivity / BLP / CATE consistency), L2 = pass_rate。
+**L3 Counterfactual**: CCR + (1 − immutable_violation/0.2), L3 = min(CCR, imm_score)。
+**L4 E2E**: AUC improvement / 0.05 + (1 − ECE/0.1) + (1 − DP/0.1), L4 = mean(可用分数)。
+
+### 关键设计
+
+1. **双门控 pass**: 单纯 CCGS ≥ 0.7 不够, 必须 4 层都过 0.7。理由: 强 L1 (DAG 完美) + 弱 L2 (refutation 全挂) 时 CCGS 仍可能 0.7+, 但模型实际不可信。
+2. **缺失分数降级而非失败**: 缺 CCR / ECE / DP 时, 该维度从 L 分母剔除, 不强制要求每个组件都有 (原型期不强求)。
+3. **BLPResult 自动转换**: `verify_l2_effect(blp_result=BLPResult(...))` 会用 `pass_at_05` 当 pass 标志, 不强制 caller 包成 dict。
+4. **可定制权重**: `compute_ccgs(weights={"l1": 0.4, ...})` 允许产品线调整 (现金贷 vs 信用卡侧重不同层)。
+
+### 测试 (`tests/test_verification.py` 25 用例)
+
+- L1: 无 bootstrap 时 placeholder / 完全重叠 → 1.0 / 部分重叠 → 0.75 / 全部错位 → fail
+- L2: 全过 / 3/5 / 缺失测试排除 / BLPResult 透传
+- L3: 全空 / 完美 CCR / CCR 拉低 / 不可变违反拉低
+- L4: AUC improvement 单维 / 强 AUC → 1.0 / 3 维组合
+- CCGS: 全过 → pass / 单层 fail → fail (双门控) / to_dict / 权重不归 1 报错
+- Visualization: `plot_pyramid` 2-panel 图 (条 + 摘要)
+
+**总测试数**: 385 → 393 (+25) — 至此**全量 393 个测试 1 分 35 秒全过**。
+
+---
+
 ## 后续迭代方向（未做）
 
 - ~~8 表 JOIN（bureau / previous_application / POS / installments / credit_card）→ 多表因果特征~~ ✅ M5 完成
@@ -727,15 +1002,17 @@ PROCEED             干净
 - ~~因果叙事深化（三层 model/cohort/individual + DAG 路径 + 解释稳健性）~~ ✅ M8.2 完成
 - ~~M8.3 完整服务化（FastAPI 5 端点 + 路由 baseline 持久化 + DAG 加 EXT_SOURCE 边）~~ ✅ M8.3 完成
 - ~~M8.4 多语言（render_markdown 加 zh-HK / en 参数）~~ ✅ M8.4 完成
+- ~~M8.5 系列（5 件: middleware / i18n / SHA-256 manifest / Oaxaca / 利率优化）~~ ✅ M8.5 完成
+- ~~M8.6 系列（4 件: TemporalGuard / BLP / CATE 稳定性 / CCGS 金字塔）~~ ✅ M8.6 完成
 - ~~M8.3c Streamlit 4 页填实（M8.2 叙事面板集成 + 流程图嵌入 + 12 单测）~~ ✅ M8.3c 完成
 - **P0 提案文档落地（6.15 提案前关键交付）**: 蓝图一页纸 / Demo 演示脚本 / 答辩 Q&A 手册 / 代码走读速查 4 份, 落到 `docs/`
 - **多表聚合 polars 改写**: pandas 单线程 ~27s 可降到 ~5s
 - **反欺诈伪标签升级**: 用反欺诈团队人工标注的真实种子集替换业务规则
 - **实时推理服务**: gRPC / ONNX Runtime (用户未禁用)
 - **生产流量调优**: 反欺诈阈值在生产数据上 ROC 优化 (现为经验值)
+- **CCGS 接入 STEP 17**: 把 L1-L4 接入 run_pipeline.py, 输出 pyramid_score.json
 - 实时推理服务（gRPC / ONNX Runtime）
 - K8s / Helm / Terraform 部署
-- **多表聚合 polars 改写**: 当前 pandas 单线程, ~27s 可降到 ~5s
 
 ---
 
@@ -744,23 +1021,23 @@ PROCEED             干净
 ```
 CausalCredit/
 ├── src/                          # 核心代码
-│   ├── data/                     # ✅ Home Credit + German 加载器, 校验, 预处理
+│   ├── data/                     # ✅ Home Credit + German 加载器, 校验, 预处理, M8.6a TemporalGuard
 │   ├── features/                 # ✅ builder + causal_features + aggregator
-│   ├── causal/                   # ✅ graph / estimate / discovery / cate / refute
+│   ├── causal/                   # ✅ graph / estimate / discovery / cate / refute / M8.6b blp_test / M8.6c stability / M8.6d verification
 │   ├── models/                   # ✅ train (LightGBM + GBT + GPU/Optuna) / evaluate / calibrate
 │   ├── explain/                  # ✅ shap_explain / counterfactual / decision / evidence / M8.2 causal_narrative + narrative_visualize
 │   ├── fraud/                    # ✅ M7 三件套: three_class + packaging + denoising + pipeline
-│   ├── fairness/                 # ✅ M8.1 metrics + slicing + visualize
-│   ├── api/                      # ✅ app / routes / services / dependencies / schemas
-│   ├── frontend/                 # ✅ app.py + 4 pages
+│   ├── fairness/                 # ✅ M8.1 metrics + slicing + visualize + M8.5f oaxaca
+│   ├── api/                      # ✅ app / routes / services / dependencies / schemas + M8.5c middleware
+│   ├── frontend/                 # ✅ app.py + 4 pages + M8.5d i18n
 │   ├── monitoring/               # ✅ drift_detector (含 M8.1e routing_drift)
 │   └── run_pipeline.py           # ✅ 16 步端到端入口
-├── tests/                        # ✅ 29 文件 / 212 用例
+├── tests/                        # ✅ 33 文件 / 393 用例 (含 M8.5f + M8.6a-d)
 ├── configs/                      # ✅ config.yaml
 ├── scripts/                      # ✅ run_api / run_demo / run_tests / setup_env
 ├── data/                         # ✅ Home Credit + German Credit
 ├── output/                       # ✅ figures (19) + decision_reports (3) + demo_m1 (9) + models
-├── docs/                         # 12 份分析文档 (含 M7/M8.1/M8.2 实现记录)
+├── docs/                         # 19 份分析文档 (含 M7/M8.1/M8.2/M8.6 实现记录)
 ├── CLAUDE.md                     # 给 Claude Code 的协作指引
 ├── PROGRESS.md                   # 本文件
 ├── README.md                     # 项目说明

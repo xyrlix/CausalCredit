@@ -20,10 +20,15 @@
 | 7 | **公平性审计 (HKMA / EU AI Act)** ⭐ | 模型对性别/年龄/收入/教育切片是否合规？ | `src/fairness/` (3 模块) | ✅ M8.1 |
 | 8 | **因果叙事深化** ⭐ | 客户问"为什么"时给 3 层解释 (model/cohort/individual) + 解释稳健性 | `src/explain/causal_narrative.py` + `narrative_visualize.py` | ✅ M8.2 |
 | 9 | **多语言 + 港式本地化** ⭐ | zh-HK 繁体 / 港式措辞 / en 国际化 | `CausalNarrative.render_markdown(language=)` | ✅ M8.4 |
+| 10 | **Oaxaca-Blinder 因果公平性分解** ⭐ | 解释子群 gap 中"特征差异" vs "系数差异"占比, discrimination_index ∈ [0,1] | `src/fairness/oaxaca.py` | ✅ M8.5f |
+| 11 | **TemporalGuard 数据泄漏防护** ⭐ | 剔除 `MONTHS_BALANCE > 0` 行, 时间有序切分, 结构化 issue 列表 | `src/data/temporal_guard.py` | ✅ M8.6a |
+| 12 | **BLP 检验 (Best Linear Predictor)** ⭐ | Chernozhukov 2018, K-fold 交叉验证 CATE → OLS Y ~ 1 + T + c_hat + c_hat·T | `src/causal/blp_test.py` | ✅ M8.6b |
+| 13 | **CATE 稳定性 Tier1+Tier2** ⭐ | 30× split-half bootstrap + 10× hyperparameter grid (Oracle P0 配方) | `src/causal/stability.py` | ✅ M8.6c |
+| 14 | **CCGS 因果验证金字塔** ⭐ | 4 层 L1-L4 (GSI/DKCS/Refutation/CCR/AUC/ECE/DP) → 1 个 0-1 复合分 | `src/causal/verification.py` | ✅ M8.6d |
 
 ---
 
-## 📊 进展看板（12 个里程碑全部完成：M0-M7 + M8.1 + M8.2 + M8.3 + M8.4）
+## 📊 进展看板（18 个里程碑全部完成：M0-M7 + M8.1-M8.6）
 
 | # | 里程碑 | 关键产出 | 累计效果 | Commit |
 |:-:|--------|----------|---------|--------|
@@ -40,8 +45,10 @@
 | **M8.2** | **因果叙事深化** ⭐ | 3 层叙事 (model/cohort/individual) + DAG 路径追溯 + 解释稳健性扰动, 16 步 / 19 图 / 17 新测试 | **"challenge the decision" 完整回答** | (M8.2) |
 | **M8.3** | **完整服务化** ⭐ | FastAPI 5 端点 fill out (11 smoke test) + 路由 baseline 持久化 (rolling update) + DAG 加 EXT_SOURCE 边 | **可生产化 API 端点** | (M8.3) |
 | **M8.4** | **多语言 + 港式本地化** ⭐ | `render_markdown(language=)` 加 zh-HK (繁體) / en 参数, 港式措辞 | **跨境 / 国际化就绪** | (M8.4) |
+| **M8.5** | **5 件套** ⭐ | M8.5c API 中间件 (rate limit / API key / PII) + M8.5d Streamlit i18n + M8.5e SHA-256 manifest + **M8.5f Oaxaca-Blinder 因果公平性分解** + M8.5g 利率优化 | 体验 + 公平性再深化 | `3e9737d` |
+| **M8.6** | **验证深化 4 件** ⭐ | **M8.6a TemporalGuard 防泄漏** + **M8.6b BLP 检验** + **M8.6c CATE 稳定性** + **M8.6d CCGS 金字塔** | 73 新测试, 320→393 | `81d692a` |
 
-**总投入**: 28 个测试文件 / **200 个测试用例** (全跑 10.9s) / **569 行反欺诈代码 + 432 行公平性代码 + 489 行叙事代码** / **19 张图表** / **3 份决策报告 + 公平性 + fraud + causal_narrative_v2 字段** / **14 份设计文档**
+**总投入**: 33 个测试文件 / **393 个测试用例** (全跑 1m35s) / **569 行反欺诈代码 + 432 行公平性代码 + 489 行叙事代码 + 1100 行 M8.6 验证代码** / **19 张图表** / **3 份决策报告 + 公平性 + fraud + causal_narrative_v2 字段** / **19 份设计文档**
 
 ---
 
@@ -279,30 +286,74 @@ education_group     status=WARNING  DP=0.008  EO=0.050  DI=0.000
 
 ---
 
+## ⚖️ 因果公平性分解 + 验证深化 (M8.5f + M8.6 重点)
+
+**问题 1**: 公平性指标说"女性 vs 男性 DP gap = 0.04", 但**这 0.04 里有几成是女性真的收入/教育分布不同 (legit), 几成是模型对女性有偏见 (suspect bias)?** 答: Oaxaca (1973) / Blinder (1973) wage-decomposition — 工业界 50 年来的标准做法。
+
+**M8.5f Oaxaca-Blinder** (`src/fairness/oaxaca.py`):
+
+```
+OaxacaBlinderResult:
+    total_gap            = ȳ_A − ȳ_B
+    explained_gap        = (x̄_A − x̄_B) · β_ref         ← Blinder 形式, β_ref=β_B
+    unexplained_gap      = total − explained             ← 恒等式强制, 吸收截距差
+    discrimination_index = |unexplained| / (|explained| + |unexplained|)  ∈ [0, 1]
+```
+
+**问题 2**: 我们有 4 类 refutation + BLP + 公平性 + 反欺诈 + 漂移, 输出散落在 8 个模块 — 评审/合规想看"模型到底可不可信"得自己拼图。答: **CCGS 因果验证金字塔** (M8.6d) + BLP (M8.6b) + CATE 稳定性 (M8.6c) + TemporalGuard (M8.6a)。
+
+**M8.6 因果验证 4 件套**:
+
+| # | 模块 | 回答的问题 | 关键产出 |
+|:-:|------|----------|------|
+| **M8.6a** | `TemporalGuard` | 训练时是否偷看了"申请后才知道"的数据? | 剔除 `MONTHS_BALANCE > 0` 行 + 时间有序切分 |
+| **M8.6b** | `BLPTest` | CATE 预测本身有信号吗? (还是常数 0?) | OLS Y ~ 1 + T + c_hat + c_hat·T, 检验 c_hat 系数 p<0.05 |
+| **M8.6c** | `CATEStabilityTester` | CATE 在不同子集 / 超参下还稳吗? | Tier1: 30× split-half bootstrap, Tier2: 10× 超参网格 |
+| **M8.6d** | `CausalVerificationPyramid` | 综合起来模型可不可信? | 4 层 L1-L4 → CCGS ∈ [0, 1], 双门控 pass |
+
+**CCGS 公式** (M8.6d):
+
+```
+   CCGS = 0.25·L1 + 0.30·L2 + 0.25·L3 + 0.20·L4
+   L1 Graph:           GSI (Jaccard bootstrap) + DKCS (per-edge 确认率)
+   L2 Effect:          5 tests (placebo / subset / sensitivity / BLP / CATE consistency)
+   L3 Counterfactual:  CCR (一致性率) + (1 − immutable_violation/0.2)
+   L4 E2E:             AUC improvement + (1 − ECE/0.1) + (1 − DP/0.1)
+   pass: CCGS ≥ 0.70  AND  all_layers_pass   ← 双门控, 防一好遮百丑
+```
+
+**为什么是这套**: 评审质疑因果估计时, 我们不再"argue" — 直接给 4 个客观分数 (GSI / BLP p / CATE ρ / CCGS) 让他看。
+
+> 完整需求↔实现追溯见 [`docs/CausalCredit_M8.6_因果验证深化实现记录.md`](docs/CausalCredit_M8.6_因果验证深化实现记录.md)
+
+---
+
 ## 📁 项目结构
 
 ```
 CausalCredit/
 ├── src/
-│   ├── data/                  # HomeCreditLoader + German Loader + validator/preprocessing
+│   ├── data/                  # HomeCreditLoader + German Loader + validator/preprocessing + M8.6a TemporalGuard
 │   ├── features/              # 因果特征 (5 个) + aggregator (8 表 JOIN)
-│   ├── causal/                # DAG / discovery / ATE / CATE / refute
+│   ├── causal/                # DAG / discovery / ATE / CATE / refute / M8.6b BLP / M8.6c stability / M8.6d verification
 │   ├── models/                # LightGBM (+ GPU/Optuna) / GBT / 校准 / 评估
 │   ├── explain/               # SHAP / DiCE / 决策 / 证据链 / M8.2 因果叙事
 │   ├── fraud/                 # M7 反欺诈三件套 (three_class + packaging + denoising + pipeline)
-│   ├── fairness/              # M8.1 公平性指标 + 切片 + 可视化
-│   ├── api/                   # FastAPI 5 端点 + 业务服务层
-│   ├── frontend/              # Streamlit 4 页
+│   ├── fairness/              # M8.1 公平性指标 + 切片 + 可视化 + M8.5f Oaxaca-Blinder
+│   ├── fraud/                 # M7 反欺诈三件套 (three_class + packaging + denoising + pipeline)
+│   ├── fairness/              # M8.1 公平性指标 + 切片 + 可视化 + M8.5f Oaxaca-Blinder
+│   ├── api/                   # FastAPI 5 端点 + 业务服务层 + M8.5c 中间件
+│   ├── frontend/              # Streamlit 4 页 + M8.5d i18n
 │   ├── monitoring/            # PSI 漂移检测 (3 层) + 路由分布 PSI
 │   └── run_pipeline.py        # 16 步端到端入口
-├── tests/                     # 28 个测试文件, 200 用例
+├── tests/                     # 33 个测试文件, 393 用例 (含 M8.5f + M8.6a-d 73 个新测试)
 ├── configs/                   # config.yaml
 ├── scripts/                   # run_api / run_demo / run_tests / setup_env
 ├── data/
 │   ├── home-credit-default-risk/    # 307K × 122 主数据集
 │   └── german_credit.csv            # 1K × 20 快速基线
 ├── output/                    # 详见下一节
-└── docs/                      # 14 份设计文档 (含 M7/M8.1/M8.2 实现记录)
+└── docs/                      # 19 份设计文档 (含 M7/M8.1/M8.2/M8.6 实现记录)
 ```
 
 ### `output/` 目录内容
@@ -420,8 +471,11 @@ output/
 - ~~**多语言决策建议** — 粤语 / 繁体~~ → 列为 **M8.4** (在 `CausalNarrative.render_markdown` 已支持中文标题基础上扩展)
 - ~~**公平性验证** — `CODE_GENDER` 节点已存在, 缺 Demographic Parity / Equal Opportunity 检验~~ → ✅ M8.1 完成
 - ~~**因果叙事深化** — 讲好"为什么高", 群组级 confounder 归因~~ → ✅ M8.2 完成
-- **M8.3 完整服务化** — FastAPI 5 端点填实 + Streamlit 4 页填实 + PSI 后台任务
-- **M8.4 多语言 + 港式本地化** — 粤语 / 繁体 / 香港场景
+- ~~**M8.3 完整服务化** — FastAPI 5 端点填实 + Streamlit 4 页填实 + PSI 后台任务~~ → ✅ M8.3 完成
+- ~~**M8.4 多语言 + 港式本地化** — 粤语 / 繁体 / 香港场景~~ → ✅ M8.4 完成
+- ~~**M8.5 系列** — 中间件 / i18n / 模型清单 / Oaxaca 因果公平性 / 利率优化~~ → ✅ M8.5 完成
+- ~~**M8.6 系列** — TemporalGuard / BLP / CATE 稳定性 / CCGS 金字塔~~ → ✅ M8.6 完成
+- **M8.7 验证金字塔接入 STEP 17** — 把 L1-L4 跑通并注入 pipeline_summary.json, 输出 `pyramid_score.json`
 - **多表聚合 polars 改写** — pandas 单线程 ~27s, 估可降到 ~5s
 - **反欺诈伪标签升级** — 用反欺诈团队人工标注的真实种子集替换业务规则
 - **实时推理服务** — gRPC / ONNX Runtime (用户未禁用)
@@ -433,13 +487,14 @@ output/
 
 | 文档 | 用途 |
 |------|------|
-| [`PROGRESS.md`](PROGRESS.md) | 10 个里程碑详细记录 (M0-M7 + M8.1 + M8.2) |
+| [`PROGRESS.md`](PROGRESS.md) | 18 个里程碑详细记录 (M0-M7 + M8.1-M8.6) |
 | [`BENCHMARKS.md`](BENCHMARKS.md) | 性能基准 + 反欺诈 routing 分布 + 单测覆盖 |
 | [`CLAUDE.md`](CLAUDE.md) | 给 Claude Code 的协作指引 (架构 / 命令 / 约定) |
-| [`docs/`](docs/) | 14 份原始分析文档 (需求 / 设计 / 验证标准) |
+| [`docs/`](docs/) | 19 份原始分析文档 (需求 / 设计 / 验证标准) |
 | [`docs/CausalCredit_M7_反欺诈三件套实现记录.md`](docs/CausalCredit_M7_反欺诈三件套实现记录.md) | M7 需求↔实现追溯 |
 | [`docs/CausalCredit_M8.1_公平性与反欺诈升级实现记录.md`](docs/CausalCredit_M8.1_公平性与反欺诈升级实现记录.md) | M8.1 公平性审计 + FraudGuardConfig + 路由 PSI |
 | [`docs/CausalCredit_M8.2_因果叙事深化实现记录.md`](docs/CausalCredit_M8.2_因果叙事深化实现记录.md) | M8.2 3 层叙事 + DAG 路径 + 解释稳健性 |
+| [`docs/CausalCredit_M8.6_因果验证深化实现记录.md`](docs/CausalCredit_M8.6_因果验证深化实现记录.md) | M8.6 TemporalGuard + BLP + CATE 稳定性 + CCGS 金字塔 |
 
 ---
 
