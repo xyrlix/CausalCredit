@@ -420,7 +420,7 @@ def load_secondary_tables(
 
 
 # Cache version — bump to invalidate the cache when the aggregator schema changes.
-SECONDARY_FEATURES_CACHE_VERSION = 1
+SECONDARY_FEATURES_CACHE_VERSION = 2
 
 
 def load_or_build_secondary_features(
@@ -464,6 +464,19 @@ def load_or_build_secondary_features(
     t0 = time.time()
     print("  [cache miss] running full multi-table aggregation ...")
     secondary_raw = load_secondary_tables(raw_dir)
+
+    # Defensive scrub: drop POS / CC rows with MONTHS_BALANCE > 0 (those are
+    # post-application records and would leak the answer into the features).
+    from src.data.temporal_guard import TemporalGuard
+    guard = TemporalGuard()
+    secondary_raw, temporal_report = guard.scrub_secondary_tables(secondary_raw)
+    if temporal_report.issues:
+        for issue in temporal_report.issues:
+            print(f"  [temporal-guard] {issue.type} table={issue.table} "
+                  f"removed={issue.count} ({100 * issue.ratio:.3f}%)")
+    else:
+        print("  [temporal-guard] no MONTHS_BALANCE > 0 rows found")
+
     agg = MultiTableAggregator()
     features = agg.aggregate_all({
         "bureau": (secondary_raw["bureau"], secondary_raw["bureau_balance"]),
