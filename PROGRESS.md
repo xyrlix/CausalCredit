@@ -728,6 +728,7 @@ PROCEED             干净
 - ~~M8.3 完整服务化（FastAPI 5 端点 + 路由 baseline 持久化 + DAG 加 EXT_SOURCE 边）~~ ✅ M8.3 完成
 - ~~M8.4 多语言（render_markdown 加 zh-HK / en 参数）~~ ✅ M8.4 完成
 - ~~M8.3c Streamlit 4 页填实（M8.2 叙事面板集成 + 流程图嵌入 + 12 单测）~~ ✅ M8.3c 完成
+- **P0 提案文档落地（6.15 提案前关键交付）**: 蓝图一页纸 / Demo 演示脚本 / 答辩 Q&A 手册 / 代码走读速查 4 份, 落到 `docs/`
 - **多表聚合 polars 改写**: pandas 单线程 ~27s 可降到 ~5s
 - **反欺诈伪标签升级**: 用反欺诈团队人工标注的真实种子集替换业务规则
 - **实时推理服务**: gRPC / ONNX Runtime (用户未禁用)

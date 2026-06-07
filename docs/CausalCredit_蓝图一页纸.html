@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="CausalCredit 蓝图一页纸 — 60 秒读懂: 一句话价值 / 架构 / 三阶段 / BOCHK 对接 / 边界">
+  <title>CausalCredit · 蓝图一页纸</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #000;
+      --bg-card: #0c0c0c;
+      --bg-card-hover: #141414;
+      --border: rgba(255, 255, 255, 0.08);
+      --text: #fff;
+      --text-2: #888;
+      --text-3: #555;
+      --accent: #00ff88;
+      --accent-dim: #00cc6a;
+      --accent-glow: rgba(0, 255, 136, 0.12);
+      --warn: #ff6b6b;
+      --gold: #c8a45c;
+      --gold-glow: rgba(200, 164, 92, 0.1);
+      --radius: 12px;
+      --pad: 24px;
+    }
+    body {
+      font-family: 'Inter', -apple-system, 'Microsoft YaHei', sans-serif;
+      background: var(--bg); color: var(--text);
+      line-height: 1.55; -webkit-font-smoothing: antialiased;
+      padding: 56px 32px 80px;
+    }
+    .wrap { max-width: 1200px; margin: 0 auto; }
+
+    /* HERO */
+    .hero { margin-bottom: 48px; }
+    .eyebrow {
+      font-size: 13px; font-weight: 500; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--accent); margin-bottom: 16px;
+    }
+    h1 {
+      font-size: clamp(40px, 5.5vw, 68px);
+      font-weight: 700; line-height: 1.05; letter-spacing: -0.03em;
+      margin-bottom: 16px;
+    }
+    h1 span { color: var(--accent); }
+    .one-liner {
+      font-size: 22px; color: var(--text-2); max-width: 760px;
+      margin-bottom: 12px; font-weight: 400;
+    }
+    .one-liner strong { color: var(--accent); font-weight: 600; }
+
+    /* META STRIP */
+    .meta-strip {
+      display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px;
+    }
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--accent-glow); color: var(--accent);
+      padding: 5px 14px; border-radius: 999px;
+      font-size: 13px; font-weight: 600;
+    }
+    .pill.gold { background: var(--gold-glow); color: var(--gold); }
+    .pill.dim { background: rgba(255,255,255,0.04); color: var(--text-2); }
+
+    /* BIG NUMBERS */
+    .stats {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
+      margin-bottom: 48px;
+    }
+    .stat {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 24px;
+    }
+    .stat-num {
+      font-size: clamp(40px, 5vw, 64px); font-weight: 700;
+      color: var(--accent); line-height: 1; letter-spacing: -0.03em;
+    }
+    .stat-label {
+      font-size: 12px; font-weight: 500; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--text-3); margin-top: 8px;
+    }
+    .stat-sub { font-size: 13px; color: var(--text-2); margin-top: 6px; }
+    @media (max-width: 800px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+
+    /* SECTION */
+    section { margin-bottom: 40px; }
+    h2 {
+      font-size: 13px; font-weight: 600; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--accent);
+      margin-bottom: 18px;
+    }
+    h2 .num {
+      color: var(--text-3); font-weight: 500; margin-right: 8px;
+    }
+
+    /* ARCHITECTURE PIPELINE */
+    .arch {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 28px;
+      font-family: 'JetBrains Mono', monospace; font-size: 13.5px;
+      color: var(--text-2); line-height: 1.8; white-space: pre;
+      overflow-x: auto;
+    }
+    .arch em { color: var(--accent); font-style: normal; font-weight: 600; }
+    .arch .layer { color: var(--gold); }
+
+    /* HIGHLIGHTS GRID */
+    .highlights {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+    }
+    .hi {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 18px;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .hi:hover { background: var(--bg-card-hover); border-color: rgba(255,255,255,0.15); }
+    .hi-num {
+      width: 26px; height: 26px; border-radius: 50%;
+      background: var(--accent-glow); color: var(--accent);
+      font-size: 12px; font-weight: 700;
+      display: inline-flex; align-items: center; justify-content: center;
+      margin-bottom: 10px;
+    }
+    .hi h4 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .hi p { font-size: 13px; color: var(--text-2); }
+    @media (max-width: 800px) { .highlights { grid-template-columns: repeat(2, 1fr); } }
+
+    /* ROADMAP */
+    .phases { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .phase {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px; position: relative;
+    }
+    .phase.current { border-color: var(--accent); background: linear-gradient(180deg, var(--accent-glow) 0%, var(--bg-card) 60%); }
+    .phase-tag {
+      display: inline-block; font-size: 11px; font-weight: 700;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--text-3); margin-bottom: 6px;
+    }
+    .phase.current .phase-tag { color: var(--accent); }
+    .phase h3 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+    .phase-time {
+      font-size: 12px; color: var(--gold); font-weight: 600;
+      margin-bottom: 12px;
+    }
+    .phase p { font-size: 13px; color: var(--text-2); margin-bottom: 8px; }
+    .phase ul { padding-left: 16px; font-size: 13px; color: var(--text-2); }
+    .phase li { margin-bottom: 4px; }
+    @media (max-width: 800px) { .phases { grid-template-columns: 1fr; } }
+
+    /* BOCHK GRID */
+    .bochk { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .bochk-card {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px;
+    }
+    .bochk-card .id { color: var(--accent); font-weight: 700; font-size: 13px; margin-bottom: 8px; }
+    .bochk-card h4 { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+    .bochk-card p { font-size: 13px; color: var(--text-2); }
+    @media (max-width: 800px) { .bochk { grid-template-columns: 1fr; } }
+
+    /* BOUNDARY */
+    .boundary {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    }
+    .ok, .not {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 18px;
+    }
+    .ok h4, .not h4 { font-size: 14px; font-weight: 700; margin-bottom: 10px; }
+    .ok h4 { color: var(--accent); }
+    .not h4 { color: var(--warn); }
+    .ok li, .not li { font-size: 13px; color: var(--text-2); margin-bottom: 6px; padding-left: 16px; position: relative; }
+    .ok li::before { content: "✓"; position: absolute; left: 0; color: var(--accent); font-weight: 700; }
+    .not li::before { content: "✗"; position: absolute; left: 0; color: var(--warn); font-weight: 700; }
+    @media (max-width: 800px) { .boundary { grid-template-columns: 1fr; } }
+
+    /* CTA */
+    .cta {
+      background: linear-gradient(135deg, var(--accent-glow) 0%, var(--bg-card) 100%);
+      border: 1px solid var(--accent); border-radius: var(--radius);
+      padding: 28px; display: flex; align-items: center; justify-content: space-between;
+      gap: 24px; flex-wrap: wrap;
+    }
+    .cta h3 { font-size: 22px; font-weight: 600; margin-bottom: 6px; }
+    .cta p { color: var(--text-2); font-size: 14px; }
+    .cta-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+    .btn {
+      padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 600;
+      text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
+      border: 1px solid var(--border); color: var(--text); background: var(--bg);
+      transition: background 0.2s;
+    }
+    .btn:hover { background: var(--bg-card-hover); }
+    .btn.primary { background: var(--accent); color: #000; border-color: var(--accent); }
+    .btn.primary:hover { background: var(--accent-dim); }
+
+    footer {
+      margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--border);
+      display: flex; justify-content: space-between; flex-wrap: wrap; gap: 16px;
+      font-size: 12px; color: var(--text-3);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+
+    <!-- HERO -->
+    <header class="hero">
+      <div class="eyebrow">中银香港创新先驱大赛 2026 · 蓝图一页纸</div>
+      <h1>Causal<span>Credit</span></h1>
+      <p class="one-liner">从「预测谁违约」升级为「<strong>指导怎么降风险</strong>」 — 因果推理增强的信用评分系统</p>
+      <div class="meta-strip">
+        <span class="pill">主数据集 · Home Credit 30 万行</span>
+        <span class="pill gold">5 张二级表 → 246 特征</span>
+        <span class="pill dim">截至 2026-06-07</span>
+        <span class="pill">12 里程碑全部交付</span>
+      </div>
+    </header>
+
+    <!-- BIG NUMBERS -->
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-num">0.7803</div>
+        <div class="stat-label">测试 AUC</div>
+        <div class="stat-sub">接近 Home Credit 业界 0.81</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">212</div>
+        <div class="stat-label">单测用例</div>
+        <div class="stat-sub">100% 通过 · 11.28s</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">16</div>
+        <div class="stat-label">端到端步骤</div>
+        <div class="stat-sub">CPU 单机 ~220s</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">19</div>
+        <div class="stat-label">可视化图表</div>
+        <div class="stat-sub">3 份决策报告 JSON/MD</div>
+      </div>
+    </div>
+
+    <!-- ARCHITECTURE -->
+    <section>
+      <h2><span class="num">01</span>系统架构 (一句话版)</h2>
+      <div class="arch">
+申请数据 + 历史信贷 (5 张二级表) + 客户属性
+   │
+   ├─ <em>[预测]</em>       LightGBM 4.6 → 违约概率 P(default)  +  信用分 300-850  +  A-E 等级
+   ├─ <span class="layer">[因果发现]</span>  PC + NOTEARS + 领域 DAG (18节点/36边)  →  因果图
+   ├─ <span class="layer">[因果效应]</span>  DoWhy + EconML  →  ATE / CATE (3 方法 Spearman 交叉验证)  +  4 类 refuter + E-value
+   ├─ <span class="layer">[可解释性]</span>  SHAP × 四象限  →  TRUSTED / UNTRUSTED / MASKED / NEGLIGIBLE  +  DAG 路径追溯
+   ├─ <span class="layer">[反事实]</span>   DiCE NSGA-II + 不可变特征锁死  →  3 套「若改 X, 风险降 Y%」
+   ├─ <span class="layer">[决策]</span>     多语言叙事 (zh / zh-HK / en)  +  4 段 (model/cohort/individual/robustness)  →  信贷员/客户话术
+   ├─ <em>[反欺诈]</em>     三分类 + 包装资质 + 养流水去噪  →  5 级路由 (REJECT_FRAUD / REJECT_PACKAGING / REVIEW_DENOISED / REVIEW_BORDERLINE / PROCEED)
+   └─ <em>[公平性]</em>     3 指标 (DP/EO/DI) × 4 切片  →  HKMA / EU AI Act 合规  +  WARNING/UNFAIR 披露
+      </div>
+    </section>
+
+    <!-- HIGHLIGHTS -->
+    <section>
+      <h2><span class="num">02</span>6+2 核心亮点 (计划书 §3 直接引用)</h2>
+      <div class="highlights">
+        <div class="hi"><div class="hi-num">1</div><h4>混合因果发现</h4><p>PC + NOTEARS + 领域 DAG</p></div>
+        <div class="hi"><div class="hi-num">2</div><h4>CATE 异质效应</h4><p>3 EconML 方法交叉验证</p></div>
+        <div class="hi"><div class="hi-num">3</div><h4>因果约束反事实</h4><p>DiCE + 不可变特征锁死</p></div>
+        <div class="hi"><div class="hi-num">4</div><h4>SHAP × 四象限</h4><p>原创分类法</p></div>
+        <div class="hi"><div class="hi-num">5</div><h4>因果引导决策</h4><p>中港英三语模板</p></div>
+        <div class="hi"><div class="hi-num">6</div><h4>反欺诈三件套</h4><p>三分类 + 包装 + 去噪</p></div>
+        <div class="hi"><div class="hi-num">7</div><h4>公平性审计</h4><p>HKMA &amp; EU AI Act</p></div>
+        <div class="hi"><div class="hi-num">8</div><h4>三层因果叙事</h4><p>信贷员/客户可读</p></div>
+      </div>
+    </section>
+
+    <!-- ROADMAP -->
+    <section>
+      <h2><span class="num">03</span>三阶段落地路线</h2>
+      <div class="phases">
+        <div class="phase current">
+          <div class="phase-tag">Phase 1 · 进行中</div>
+          <h3>概念验证</h3>
+          <div class="phase-time">已完成 · 截至 2026-06-07</div>
+          <p>Home Credit 30 万行公开数据</p>
+          <ul>
+            <li>MVP Pipeline 16 步</li>
+            <li>212 单测 100% 通过</li>
+            <li>FastAPI 5 端点 + Streamlit 4 页</li>
+            <li>19 张图 + 3 份决策报告</li>
+          </ul>
+        </div>
+        <div class="phase">
+          <div class="phase-tag">Phase 2 · 待启动</div>
+          <h3>银行试点</h3>
+          <div class="phase-time">3–6 个月 · 待 BOCHK 协调</div>
+          <p>银行脱敏信贷数据 + 真实欺诈标注</p>
+          <ul>
+            <li>定制 DAG + 本地化 CATE</li>
+            <li>反欺诈真实标注校准</li>
+            <li>公平性二次校验</li>
+            <li>A/B 对比试点</li>
+          </ul>
+        </div>
+        <div class="phase">
+          <div class="phase-tag">Phase 3 · 远期</div>
+          <h3>生产嵌入</h3>
+          <div class="phase-time">6–12 个月 · HKMA 合规</div>
+          <p>生产级数据管道 + 监控</p>
+          <ul>
+            <li>PSI 漂移告警闭环</li>
+            <li>人工复核工作流</li>
+            <li>审计日志 + 监管报送</li>
+            <li>实时推理 (gRPC / ONNX)</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- BOCHK 对接 -->
+    <section>
+      <h2><span class="num">04</span>与 BOCHK 痛点对齐</h2>
+      <div class="bochk">
+        <div class="bochk-card">
+          <div class="id">艾伦报告 C1 · 薄信用人群</div>
+          <h4>新来港人士 / 应届生 / 无信贷历史</h4>
+          <p>传统评分因"无历史违约"直接拒绝, 我们用 EXT_SOURCE_* (外部风险分) + BUREAU 多机构数据填补, 概念上覆盖大湾区"新市民"群体。</p>
+        </div>
+        <div class="bochk-card">
+          <div class="id">艾伦报告 C5 · AI 可解释性</div>
+          <h4>HKMA AI 模型监管要求</h4>
+          <p>SHAP × 四象限 + DAG 路径追溯 + 多语言叙事, 让信贷员和客户都能"challenge the decision", 对位 EU AI Act 第 13 条 (透明度)。</p>
+        </div>
+        <div class="bochk-card">
+          <div class="id">艾伦报告 F2 · 主观欺诈</div>
+          <h4>恶意包装 / 养流水</h4>
+          <p>三件套 (三分类 + 包装资质因果一致性 + 养流水因果去噪), 5 级路由分级处置 (REJECT / REVIEW / PROCEED)。</p>
+        </div>
+        <div class="bochk-card">
+          <div class="id">艾伦报告 F4 · 公平性合规</div>
+          <h4>性别 / 年龄 / 收入 切片</h4>
+          <p>3 指标 (DP/EO/DI) × 4 默认切片, WARNING 状态主动披露, 不掩盖。我们是"主动审计"而非"通过审计"。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- BOUNDARY -->
+    <section>
+      <h2><span class="num">05</span>边界 (concept verification vs production)</h2>
+      <div class="boundary">
+        <div class="ok">
+          <h4>✓ 可自信讲</h4>
+          <ul>
+            <li>范式升级: 预测→归因→决策→反欺诈闭环</li>
+            <li>SHAP × 因果四象限是原创组合, 可发表</li>
+            <li>工程完成度极高: 212 测试 / 16 步 / 19 图</li>
+            <li>CPU 单机 &lt; HK$500 算力, 不依赖 GPU</li>
+          </ul>
+        </div>
+        <div class="not">
+          <h4>✗ 主动承认局限</h4>
+          <ul>
+            <li>不接 BOCHK 生产系统 — 验证平台 + 迁移路线</li>
+            <li>反欺诈是规则伪标签, 待 Phase 2 真实标注</li>
+            <li>AUC 0.78 不宣称超越业界 — 接近 leaderboard</li>
+            <li>因果图 5/5 重叠 = 领域一致性, 非真值召回</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section>
+      <div class="cta">
+        <div>
+          <h3>60 秒内可复现</h3>
+          <p>git clone → pip install → python -m src.run_pipeline → 浏览器看 Streamlit 4 页</p>
+        </div>
+        <div class="cta-buttons">
+          <a class="btn primary" href="../项目总结与行动建议.html">完整总结 ↗</a>
+          <a class="btn" href="CausalCredit_Demo演示脚本.md">Demo 脚本</a>
+          <a class="btn" href="CausalCredit_答辩Q&A手册.md">Q&A 手册</a>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <div>CausalCredit · 蓝图一页纸 · 2026-06-07</div>
+      <div>整理: 陈天元 · 工程: 李定泉 + 许海波 · 审计: 卢鸿璋</div>
+    </footer>
+
+  </div>
+</body>
+</html>
