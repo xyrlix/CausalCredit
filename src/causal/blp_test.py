@@ -196,17 +196,10 @@ class BLPTest:
         for fold_idx, (train_idx, test_idx) in enumerate(kf.split(X)):
             try:
                 if W is None:
-                    # CATEEstimator's fit_dml wraps the call so that W=None
-                    # becomes a (n, 0) array — which econml 0.16 rejects
-                    # with "0 feature(s) … minimum of 1 is required".
-                    # Calling econml directly with W omitted avoids that.
-                    model = self._fit_direct(
-                        Y[train_idx], T[train_idx], X[train_idx],
-                    )
+                    model = fit_fn(Y[train_idx], T[train_idx], X[train_idx])
                 else:
                     model = fit_fn(
-                        Y[train_idx], T[train_idx], X[train_idx],
-                        W[train_idx],
+                        Y[train_idx], T[train_idx], X[train_idx], W[train_idx],
                     )
                 c_hat[test_idx] = est.estimate_cate(model, X[test_idx])
             except Exception as e:  # pragma: no cover
@@ -216,53 +209,6 @@ class BLPTest:
                 )
                 c_hat[test_idx] = 0.0
         return c_hat
-
-    def _fit_direct(self, Y: np.ndarray, T: np.ndarray, X: np.ndarray):
-        """Fit an econml DML estimator directly (no W) — used when the
-        caller did not supply W and we want to avoid the (n, 0) shim."""
-        from econml.dml import LinearDML, SparseLinearDML, CausalForestDML
-
-        # First-stage models chosen to match src.causal.cate.CATEEstimator
-        from sklearn.ensemble import GradientBoostingRegressor
-        from sklearn.linear_model import LassoCV
-        n = len(Y)
-        unique_frac = len(np.unique(T)) / max(n, 1)
-        discrete_t = len(np.unique(T)) <= max(10, int(0.05 * n))
-        if discrete_t:
-            from sklearn.linear_model import LogisticRegressionCV
-            model_t = LogisticRegressionCV(cv=3, max_iter=2000, random_state=0)
-        else:
-            model_t = LassoCV(cv=3, random_state=0, max_iter=5000)
-        model_y = GradientBoostingRegressor(
-            n_estimators=200, max_depth=4, learning_rate=0.05, random_state=0,
-        )
-
-        cls = {
-            "LinearDML": LinearDML,
-            "SparseLinearDML": SparseLinearDML,
-            "CausalForestDML": CausalForestDML,
-        }[self.method]
-        if self.method == "CausalForestDML":
-            model = cls(
-                model_y=model_y, model_t=model_t,
-                discrete_treatment=discrete_t, n_estimators=200, max_depth=6,
-                min_samples_leaf=20, cv=2, random_state=self.random_state, n_jobs=-1,
-            )
-        elif self.method == "SparseLinearDML":
-            model = cls(
-                model_y=model_y, model_t=model_t,
-                discrete_treatment=discrete_t, cv=2,
-                random_state=self.random_state, n_jobs=-1,
-            )
-        else:  # LinearDML — does not accept n_jobs
-            model = cls(
-                model_y=model_y, model_t=model_t,
-                discrete_treatment=discrete_t, cv=2,
-                random_state=self.random_state,
-            )
-        model.fit(Y, T, X=X)
-        model._econml_meta = {"method": self.method, "discrete_treatment": discrete_t}
-        return model
 
     def _fit_blp_regression(
         self,

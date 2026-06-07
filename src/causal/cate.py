@@ -109,8 +109,9 @@ class CATEEstimator:
             random_state=self.random_state,
         )
         if W is None:
-            W = np.zeros((len(Y), 0))
-        model.fit(Y, T, X=X, W=W)
+            model.fit(Y, T, X=X)
+        else:
+            model.fit(Y, T, X=X, W=W)
         model._econml_meta = {"method": "LinearDML", "discrete_treatment": discrete_t}
         return model
 
@@ -142,8 +143,9 @@ class CATEEstimator:
             n_jobs=-1,
         )
         if W is None:
-            W = np.zeros((len(Y), 0))
-        model.fit(Y, T, X=X, W=W)
+            model.fit(Y, T, X=X)
+        else:
+            model.fit(Y, T, X=X, W=W)
         model._econml_meta = {"method": "SparseLinearDML", "discrete_treatment": discrete_t}
         return model
 
@@ -171,8 +173,9 @@ class CATEEstimator:
             n_jobs=-1,
         )
         if W is None:
-            W = np.zeros((len(Y), 0))
-        model.fit(Y, T, X=X, W=W)
+            model.fit(Y, T, X=X)
+        else:
+            model.fit(Y, T, X=X, W=W)
         model._econml_meta = {"method": "CausalForestDML", "discrete_treatment": discrete_t}
         return model
 
