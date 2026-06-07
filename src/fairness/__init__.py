@@ -53,6 +53,11 @@ from src.fairness.visualize import (
     plot_status_board,
     render_all,
 )
+from src.fairness.oaxaca import (
+    OaxacaBlinderResult,
+    oaxaca_blinder_decomposition,
+    plot_oaxaca_decomposition,
+)
 
 __all__ = [
     "demographic_parity_gap",
@@ -68,4 +73,7 @@ __all__ = [
     "plot_metric_gaps",
     "plot_status_board",
     "render_all",
+    "OaxacaBlinderResult",
+    "oaxaca_blinder_decomposition",
+    "plot_oaxaca_decomposition",
 ]
