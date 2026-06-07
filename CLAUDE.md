@@ -134,7 +134,7 @@ Everything else listed in `docs/CausalCredit_完整实现计划书.md` §4.1–4
 
 ## Test layout
 
-200 tests across 28 files (~11s):
+212 tests across 29 files (~12s):
 
 | Test file | Cases | What it covers |
 |-----------|------:|----------------|
@@ -148,6 +148,7 @@ Everything else listed in `docs/CausalCredit_完整实现计划书.md` §4.1–4
 | `test_causal_narrative.py` | 17 | 3-level narrative (model/cohort/individual) + DAG paths + robustness + multi-language render (M8.2 + M8.4a) |
 | `test_narrative_visualize.py` | 4 | Waterfall + 3-panel card (M8.2e) |
 | `test_api_smoke.py` | 11 | FastAPI 5 endpoints via TestClient (M8.3b) |
+| `test_streamlit_smoke.py` | 12 | 4 Streamlit pages + M8.2 narrative tab + DAG builder (M8.3c) |
 | `test_aggregation.py` | 16 | Bureau / prev / POS / INST / CC aggregators |
 | `test_train.py` | 7 | LightGBM GPU/Optuna toggle, `_resolve_device` |
 | `test_fraud_three_class.py` | 7 | Pseudo-labels + 4-class model + `fraud_score` |

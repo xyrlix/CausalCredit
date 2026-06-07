@@ -95,6 +95,17 @@ def render(ctx: Dict) -> None:
         df = df.sort_values("|shap|", ascending=False)[["feature", "value", "shap", "direction"]]
         st.dataframe(df, use_container_width=True, hide_index=True)
 
+    # M8.2 — Causal narrative waterfall (from pipeline cache, if present)
+    from pathlib import Path
+    waterfall_path = Path("output/figures/15_causal_waterfall.png")
+    if waterfall_path.exists():
+        st.subheader("Causal Narrative (M8.2)")
+        st.caption(
+            "Top features with 4-quadrant labels — TRUSTED (model+causal agree), "
+            "UNTRUSTED (model only), MASKED (causal only), NEGLIGIBLE."
+        )
+        st.image(str(waterfall_path), use_container_width=True)
+
     # Causal context
     if resp.causal_effect:
         st.subheader("Causal Context (ATE)")

@@ -1,0 +1,1436 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="CausalCredit 项目总结与行动建议 — 中银香港创新先驱大赛 2026，因果推理增强信用评分系统的蓝图、行动路线与答辩策略。">
+  <title>CausalCredit — 项目总结与行动建议</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    /* DESIGN.md — Runway-Inspired: #000 / #00ff88 / Inter / 零装饰 */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg-primary: #000000;
+      --bg-secondary: #0a0a0a;
+      --bg-card: #111111;
+      --bg-card-hover: #1a1a1a;
+      --text-primary: #ffffff;
+      --text-secondary: #888888;
+      --text-muted: #555555;
+      --accent: #00ff88;
+      --accent-dim: #00cc6a;
+      --accent-glow: rgba(0, 255, 136, 0.15);
+      --warn: #ff4444;
+      --warn-glow: rgba(255, 68, 68, 0.15);
+      --gold: #c8a45c;
+      --gold-glow: rgba(200, 164, 92, 0.12);
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 20px;
+      --radius-full: 9999px;
+      --space-xs: 8px;
+      --space-sm: 16px;
+      --space-md: 24px;
+      --space-lg: 48px;
+      --space-xl: 80px;
+      --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.6);
+      --gradient-accent: linear-gradient(90deg, #00ff88, #00cc6a);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', 'SF Pro Display', -apple-system, 'Microsoft YaHei', sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .skip-link {
+      position: absolute;
+      top: -100%;
+      left: var(--space-sm);
+      z-index: 200;
+      padding: 10px 16px;
+      background: var(--accent);
+      color: #000;
+      font-weight: 600;
+      text-decoration: none;
+      border-radius: var(--radius-sm);
+    }
+
+    .skip-link:focus {
+      top: var(--space-sm);
+    }
+
+    a:focus-visible,
+    button:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .progress-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      height: 3px;
+      width: 0%;
+      background: var(--gradient-accent);
+      box-shadow: 0 0 12px rgba(0, 255, 136, 0.55);
+      z-index: 100;
+      transition: width 0.1s ease-out;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      min-height: 100vh;
+    }
+
+    /* 移动端顶栏 + 抽屉导航 */
+    .mobile-header {
+      display: none;
+      position: sticky;
+      top: 0;
+      z-index: 90;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-sm);
+      padding: 12px var(--space-sm);
+      background: rgba(10, 10, 10, 0.92);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      backdrop-filter: blur(8px);
+    }
+
+    .mobile-brand {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+      text-decoration: none;
+    }
+
+    .mobile-brand span { color: var(--accent); }
+
+    .menu-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px;
+      height: 44px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: var(--radius-sm);
+      background: var(--bg-card);
+      color: var(--text-primary);
+      cursor: pointer;
+      font-size: 20px;
+      line-height: 1;
+    }
+
+    .nav-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 110;
+      background: rgba(0, 0, 0, 0.65);
+    }
+
+    .nav-overlay.open { display: block; }
+
+    .nav-drawer {
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: 120;
+      width: min(280px, 85vw);
+      height: 100vh;
+      padding: var(--space-lg) var(--space-md);
+      background: var(--bg-secondary);
+      border-right: 1px solid rgba(255, 255, 255, 0.08);
+      transform: translateX(-105%);
+      transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow-y: auto;
+    }
+
+    .nav-drawer.open { transform: translateX(0); }
+
+    .nav-drawer-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: var(--space-md);
+    }
+
+    .nav-close {
+      width: 40px;
+      height: 40px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: var(--radius-sm);
+      background: var(--bg-card);
+      color: var(--text-primary);
+      cursor: pointer;
+      font-size: 22px;
+      line-height: 1;
+    }
+
+    .back-to-top {
+      position: fixed;
+      right: var(--space-sm);
+      bottom: calc(var(--space-md) + 8px);
+      z-index: 95;
+      width: 44px;
+      height: 44px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: var(--radius-full);
+      background: var(--bg-card);
+      color: var(--accent);
+      font-size: 20px;
+      cursor: pointer;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(8px);
+      transition: opacity 0.2s, transform 0.2s, visibility 0.2s;
+      box-shadow: var(--shadow-card);
+    }
+
+    .back-to-top.visible {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+    }
+
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      .nav-sidebar { display: none; }
+      .mobile-header { display: flex; }
+      main {
+        padding: var(--space-md) var(--space-sm);
+        padding-top: var(--space-md);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
+      .nav-drawer { transition: none; }
+    }
+
+    .nav-sidebar,
+    .nav-drawer {
+      padding: var(--space-lg) var(--space-md);
+      background: var(--bg-secondary);
+    }
+
+    .nav-sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      border-right: 1px solid rgba(255, 255, 255, 0.06);
+      overflow-y: auto;
+    }
+
+    .nav-label {
+      font-size: 14px;
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: var(--space-md);
+    }
+
+    .nav-sidebar a,
+    .nav-drawer a {
+      display: block;
+      font-size: 14px;
+      color: var(--text-secondary);
+      text-decoration: none;
+      padding: 10px 0;
+      border-bottom: 1px solid transparent;
+      transition: color 0.2s;
+    }
+
+    .nav-sidebar a:hover,
+    .nav-drawer a:hover { color: var(--accent); }
+
+    .nav-sidebar a:focus-visible,
+    .nav-drawer a:focus-visible {
+      color: var(--accent);
+    }
+
+    main {
+      max-width: 960px;
+      padding: var(--space-xl) var(--space-lg);
+    }
+
+    .hero {
+      margin-bottom: var(--space-xl);
+      padding-bottom: var(--space-lg);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .hero h1 {
+      font-size: clamp(40px, 6vw, 72px);
+      font-weight: 700;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+      margin-bottom: var(--space-md);
+    }
+
+    .hero h1 span { color: var(--accent); }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-sm);
+      margin-top: var(--space-md);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--accent-glow);
+      color: var(--accent);
+      border-radius: var(--radius-full);
+      padding: 4px 16px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .badge.gold {
+      background: var(--gold-glow);
+      color: var(--gold);
+    }
+
+    .badge.warn {
+      background: var(--warn-glow);
+      color: var(--warn);
+    }
+
+    .hero-purpose {
+      font-size: 20px;
+      color: var(--text-secondary);
+      margin-top: var(--space-md);
+      max-width: 680px;
+    }
+
+    section {
+      margin-bottom: var(--space-xl);
+      scroll-margin-top: var(--space-md);
+    }
+
+    h2 {
+      font-size: clamp(32px, 4vw, 48px);
+      font-weight: 600;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+      margin-bottom: var(--space-lg);
+      padding-bottom: var(--space-sm);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    h2 .num {
+      color: var(--accent);
+      font-size: 14px;
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      display: block;
+      margin-bottom: var(--space-xs);
+    }
+
+    h3 {
+      font-size: 28px;
+      font-weight: 500;
+      line-height: 1.2;
+      letter-spacing: -0.01em;
+      margin: var(--space-lg) 0 var(--space-md);
+      color: var(--text-primary);
+    }
+
+    h4 {
+      font-size: 20px;
+      font-weight: 600;
+      margin: var(--space-md) 0 var(--space-sm);
+      color: var(--text-primary);
+    }
+
+    p, li {
+      font-size: 16px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    p { margin-bottom: var(--space-sm); }
+
+    strong { color: var(--text-primary); font-weight: 600; }
+
+    ul, ol {
+      margin: var(--space-sm) 0 var(--space-md);
+      padding-left: 1.4em;
+    }
+
+    li { margin-bottom: 8px; }
+
+    .lead {
+      font-size: 20px;
+      color: var(--text-secondary);
+      margin-bottom: var(--space-md);
+    }
+
+    .lead strong { color: var(--accent); }
+
+    .card {
+      background: var(--bg-card);
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      padding: var(--space-md);
+      margin-bottom: var(--space-md);
+      box-shadow: var(--shadow-card);
+      transition: border-color 0.2s, background 0.2s, transform 0.2s;
+    }
+
+    .card:hover,
+    .card:focus-within {
+      background: var(--bg-card-hover);
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .reveal {
+        opacity: 0;
+        transform: translateY(20px);
+        transition: opacity 0.55s ease-out, transform 0.55s ease-out;
+      }
+
+      .reveal.is-visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: var(--space-md);
+      margin: var(--space-md) 0;
+    }
+
+    .stat-hero {
+      font-size: clamp(48px, 8vw, 96px);
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: -0.04em;
+      color: var(--accent);
+      margin: var(--space-md) 0;
+    }
+
+    .stat-label {
+      font-size: 14px;
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .quote-box {
+      border-left: 3px solid var(--accent);
+      padding: var(--space-md) var(--space-md) var(--space-md) var(--space-lg);
+      margin: var(--space-lg) 0;
+      background: var(--accent-glow);
+      border-radius: 0 var(--radius-md) var(--radius-md) 0;
+    }
+
+    .quote-box p {
+      font-size: 20px;
+      color: var(--text-primary);
+      margin: 0;
+    }
+
+    .quote-box.warn {
+      border-left-color: var(--warn);
+      background: var(--warn-glow);
+    }
+
+    .quote-box.gold {
+      border-left-color: var(--gold);
+      background: var(--gold-glow);
+    }
+
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 16px;
+      min-width: 480px;
+    }
+
+    thead { background: var(--bg-card); }
+
+    th {
+      text-align: left;
+      padding: 14px 18px;
+      font-size: 14px;
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    td {
+      padding: 14px 18px;
+      color: var(--text-secondary);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      vertical-align: top;
+    }
+
+    tr:hover td { background: rgba(255, 255, 255, 0.02); }
+
+    td strong { color: var(--text-primary); }
+
+    .severity-high { color: var(--warn); font-weight: 600; }
+    .severity-mid { color: var(--gold); }
+    .severity-low { color: var(--accent); }
+
+    .chip {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: var(--radius-full);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .chip.ok {
+      background: var(--accent-glow);
+      color: var(--accent);
+    }
+
+    .chip.warn {
+      background: var(--warn-glow);
+      color: var(--warn);
+    }
+
+    .chip.gold {
+      background: var(--gold-glow);
+      color: var(--gold);
+    }
+
+    .stars { color: var(--gold); letter-spacing: 2px; }
+
+    .rating {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .table-wrap {
+      position: relative;
+      overflow-x: auto;
+      margin: var(--space-md) 0;
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .table-scroll-hint {
+      display: none;
+      padding: 8px 12px;
+      font-size: 13px;
+      color: var(--text-muted);
+      text-align: center;
+      border-top: 1px solid rgba(255, 255, 255, 0.04);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    @media (max-width: 900px) {
+      .table-wrap.is-scrollable .table-scroll-hint { display: block; }
+    }
+
+    pre {
+      background: var(--bg-card);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: var(--radius-md);
+      padding: var(--space-md);
+      overflow-x: auto;
+      margin: var(--space-md) 0;
+      box-shadow: var(--shadow-card);
+    }
+
+    code {
+      font-family: 'SF Mono', 'Consolas', monospace;
+      font-size: 14px;
+      line-height: 1.5;
+      color: var(--accent);
+    }
+
+    pre code { color: var(--text-secondary); white-space: pre; }
+
+    .pipeline {
+      font-family: 'SF Mono', 'Consolas', monospace;
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.7;
+      white-space: pre;
+    }
+
+    .member { margin-bottom: var(--space-md); }
+
+    .member-name {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: var(--space-xs);
+    }
+
+    .member-role {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-bottom: var(--space-sm);
+    }
+
+    .highlight-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: var(--radius-full);
+      background: var(--accent-glow);
+      color: var(--accent);
+      font-size: 14px;
+      font-weight: 700;
+      margin-right: 8px;
+    }
+
+    footer {
+      padding: var(--space-lg) 0 var(--space-xl);
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      margin-top: var(--space-xl);
+    }
+
+    footer p {
+      font-size: 20px;
+      color: var(--text-secondary);
+    }
+
+    footer strong { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">跳到正文</a>
+  <div class="progress-bar" id="progressBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="阅读进度"></div>
+
+  <header class="mobile-header" aria-label="移动端导航">
+    <a class="mobile-brand" href="#main-content">Causal<span>Credit</span></a>
+    <button type="button" class="menu-toggle" id="menuOpen" aria-label="打开目录" aria-expanded="false" aria-controls="navDrawer">☰</button>
+  </header>
+
+  <div class="nav-overlay" id="navOverlay" hidden></div>
+  <aside class="nav-drawer" id="navDrawer" aria-label="移动端目录" aria-hidden="true">
+    <div class="nav-drawer-header">
+      <div class="nav-label">目录</div>
+      <button type="button" class="nav-close" id="menuClose" aria-label="关闭目录">×</button>
+    </div>
+    <nav id="mobileNavLinks"></nav>
+  </aside>
+
+  <button type="button" class="back-to-top" id="backToTop" aria-label="返回顶部">↑</button>
+
+  <div class="layout">
+    <nav class="nav-sidebar" aria-label="目录">
+      <div class="nav-label">目录</div>
+      <a href="#s1">一、项目定位</a>
+      <a href="#s2">二、当前进度</a>
+      <a href="#s3">三、关键问题</a>
+      <a href="#s3-blueprint">　↳ 蓝图叙事</a>
+      <a href="#s4">四、行动建议</a>
+      <a href="#s5">五、导师答辩蓝图</a>
+      <a href="#s6">六、风险评估</a>
+      <a href="#s7">七、下一步</a>
+      <a href="#s8">八、复现说明 + 资产清单</a>
+    </nav>
+
+    <main id="main-content">
+      <header class="hero">
+        <h1>Causal<span>Credit</span></h1>
+        <p class="hero-purpose">项目总结与行动建议 — 6.15 前把蓝图讲清楚，计划书过了再深挖工程</p>
+        <div class="meta">
+          <span class="badge">整理人 · 卢鸿璋</span>
+          <span class="badge gold">2026-06-06（增补 2026-06-07）</span>
+          <span class="badge warn">节奏 · 先提案后深化</span>
+          <span class="badge">M8.3/M8.4 已完工</span>
+        </div>
+      </header>
+
+      <!-- 一、项目定位 -->
+      <section id="s1">
+        <h2><span class="num">Section 01</span>项目定位</h2>
+        <p class="lead"><strong>一句话</strong>：CausalCredit — 因果推理增强信用评分系统，从「预测谁会违约」升级为「指导如何降风险、如何做决策」</p>
+
+        <div class="card-grid">
+          <div class="card">
+            <h4>科技主题</h4>
+            <p>大数据 / AI — 因果推理（Causal Inference）+ 机器学习</p>
+          </div>
+          <div class="card">
+            <h4>场景主题</h4>
+            <p>普惠金融 — 薄信用人群评估、信贷风控、反欺诈</p>
+          </div>
+          <div class="card">
+            <h4>比赛</h4>
+            <p>中银香港创新先驱大赛 2026</p>
+          </div>
+        </div>
+
+        <h3>核心叙事</h3>
+        <div class="quote-box">
+          <p>传统信用评分只告诉你「风险有多高」；CausalCredit 告诉你「为什么高、以及如何降低」——从相关性预测到因果性决策的范式跃迁。</p>
+        </div>
+
+        <h3>与 BOCHK 的关联度</h3>
+        <p class="rating" role="img" aria-label="与 BOCHK 关联度：四星半，满分五星">
+          <span class="stars" aria-hidden="true">★★★★☆</span>
+        </p>
+        <ul>
+          <li>对标痛点 <strong>C1 薄信用人群评估</strong>（新来港人士、应届生、无信贷历史客户）— 艾伦报告 38 痛点 TOP 级</li>
+          <li>信贷风控是 BOCHK 核心业务；因果可解释性对齐 HKMA 对 AI 模型的监管要求</li>
+          <li>反欺诈三件套覆盖主观欺诈 / 包装资质 / 养流水，贴近零售信贷真实场景</li>
+          <li>Home Credit 作为<strong>方法论验证平台</strong>；落地路径明确为后续接入 BOCHK 脱敏数据</li>
+        </ul>
+
+        <h3>6+2 核心亮点（计划书 §3 直接引用）</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>#</th><th>亮点</th><th>价值</th><th>审计评价</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>1</td><td><strong>混合因果发现引擎</strong></td><td>PC + NOTEARS 融合，区分因果 vs 巧合</td><td><span class="chip ok">强</span></td></tr>
+              <tr><td>2</td><td><strong>CATE（条件平均处理效应）异质处理效应</strong></td><td>同一政策对不同客户差异化效果</td><td><span class="chip ok">强</span></td></tr>
+              <tr><td>3</td><td><strong>因果约束反事实</strong></td><td>DiCE NSGA-II，「怎样改才能降风险」</td><td><span class="chip ok">强</span></td></tr>
+              <tr><td>4</td><td><strong>SHAP（Shapley 加性解释）× 因果四象限</strong></td><td>模型重要 ≠ 因果重要，原创视角</td><td><span class="chip ok">很强</span></td></tr>
+              <tr><td>5</td><td><strong>因果引导决策建议</strong></td><td>中英模板，信贷员 / 客户可执行话术</td><td><span class="chip ok">强</span></td></tr>
+              <tr><td>6</td><td><strong>反欺诈三件套</strong></td><td>三分类 + 包装资质 + 养流水去噪</td><td><span class="chip gold">中等</span></td></tr>
+              <tr><td>7</td><td><strong>M8.1 公平性审计</strong></td><td>DP/EO/DI 三指标 × 4 默认切片（性别/年龄/收入/学历），HKMA &amp; EU AI Act 合规</td><td><span class="chip ok">强</span></td></tr>
+              <tr><td>8</td><td><strong>M8.2 三层因果叙事</strong></td><td>model/cohort/individual + DAG 路径追溯 + 解释稳健性扰动（20× ±10%），信贷员可读</td><td><span class="chip ok">强</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 二、当前进度 -->
+      <section id="s2">
+        <h2><span class="num">Section 02</span>当前进度评估</h2>
+
+        <p class="lead">工程底座已远超一般参赛项目；但<strong>当前阶段不应继续猛堆功能</strong>，6.15 前的胜负手是计划书 + 蓝图 + 导师叙事。</p>
+
+        <h3>工程底座（已完成 · 截至 2026-06-07）</h3>
+        <div class="card-grid">
+          <div class="card">
+            <div class="stat-label">测试 AUC</div>
+            <div class="stat-hero">0.7803</div>
+            <p>Home Credit 真实数据，接近 Kaggle  leaderboard ≈ 0.81</p>
+          </div>
+          <div class="card">
+            <div class="stat-label">工程质量</div>
+            <div class="stat-hero" style="font-size:56px">212</div>
+            <p>测试用例 100% 通过 · 12 里程碑全部交付 · 16 步 Pipeline ~220s</p>
+          </div>
+          <div class="card">
+            <div class="stat-label">可视化</div>
+            <div class="stat-hero" style="font-size:56px">19</div>
+            <p>图表（含 M8.1 公平性 3 张 + M8.2 因果瀑布 / 叙事卡 2 张）</p>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>项目</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><strong>战略转型</strong></td><td>从 GNN 欺诈检测转向因果推理信用评分，数据从模拟转向 Home Credit 30 万行真实金融数据</td></tr>
+              <tr><td><strong>端到端 Pipeline</strong></td><td>16 步：加载 → 多表 JOIN → LightGBM → 因果发现 → ATE/CATE → SHAP 四象限 → 反事实 → 反欺诈三件套 → 公平性审计 → 因果叙事</td></tr>
+              <tr><td><strong>多表因果特征</strong></td><td>5 张二级表（bureau / previous_application / POS_CASH / installments / credit_card）→ 246 聚合特征，AUC 0.7547 → 0.7803</td></tr>
+              <tr><td><strong>服务化</strong></td><td>FastAPI 5 端点（11 smoke test）+ Streamlit 4 页 Demo（12 smoke test，含 M8.2 因果叙事 tab）</td></tr>
+              <tr><td><strong>多语言</strong></td><td>CausalNarrative.render_markdown 支持 zh / zh-HK（港式）/ en 三语，header 与表头翻译，叙述体保留英文</td></tr>
+              <tr><td><strong>文档体系</strong></td><td>14 份设计文档 + BOCHK 痛点分析 + 五主题可行性评估 + 独立审计报告 + M7/M8.1/M8.2 实现记录</td></tr>
+              <tr><td><strong>产出物</strong></td><td>19 张图表（output/figures/）· 3 份决策报告 JSON（output/decision_reports/）· PSI 漂移监控（特征 + 路由）· 路由 baseline 持久化（routing_baseline.json）</td></tr>
+              <tr><td><strong>代码仓库</strong></td><td>GitHub 公开（CausalCredit/），可复现、可审计 · 21 个单测文件 · 1 个 registry 缓存（registry_v1.pkl, 7.4MB）</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>6.15 前必须补齐（提案期重点）</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>项目</th><th>严重性</th><th>说明</th><th>截至 6.07 状态</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>参赛计划书定稿</strong></td>
+                <td><span class="chip warn">🔴</span></td>
+                <td>把 6+2 大亮点、BOCHK 价值、落地路线图写进正式计划书，而非散落在 docs/</td>
+                <td><span class="chip warn">未开始</span></td>
+              </tr>
+              <tr>
+                <td><strong>导师可读的蓝图</strong></td>
+                <td><span class="chip warn">🔴</span></td>
+                <td>一页愿景 + 三阶段落地 + 合理边界（概念验证 vs 生产就绪）</td>
+                <td><span class="chip warn">未开始</span></td>
+              </tr>
+              <tr>
+                <td><strong>团队技术问答准备</strong></td>
+                <td><span class="chip warn">🔴</span></td>
+                <td>核心代码（M0-M8.2 共 12+ 模块）须有人能讲透，不能只会跑 Pipeline</td>
+                <td><span class="chip gold">部分</span></td>
+              </tr>
+              <tr>
+                <td><strong>伪标签叙事包装</strong></td>
+                <td><span class="chip gold">🟡</span></td>
+                <td>反欺诈模块主动说明「概念验证」定位，避免被评委抓住 ground truth 缺失</td>
+                <td><span class="chip warn">未开始</span></td>
+              </tr>
+              <tr>
+                <td><strong>Demo 演示脚本</strong></td>
+                <td><span class="chip gold">🟡</span></td>
+                <td>Streamlit 走通 1 条「评分 → 归因 → 反事实 → 决策报告」故事线</td>
+                <td><span class="chip ok">✅ M8.3c 已完成</span></td>
+              </tr>
+              <tr>
+                <td><strong>多语言版本叙事卡</strong></td>
+                <td><span class="chip gold">🟡</span></td>
+                <td>为评审团中港两地 + 海外成员准备 zh-HK / en 版因果叙事卡</td>
+                <td><span class="chip ok">✅ M8.4a 已完成</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>刻意暂缓（6.15 后、导师反馈后再做）</h3>
+        <ul>
+          <li>刷 AUC / 加模型复杂度 — 已接近数据天花板，边际收益低</li>
+          <li>UI 炫酷化、新场景扩张 — 聚焦 1–2 条演示路径做精</li>
+          <li>大规模重构或新数据集接入 — 等计划书过、导师方向明确后再投入</li>
+          <li>多表 JOIN 8 表改 polars 提速 — pandas 单线程 ~27s 可降到 ~5s，但与 6.15 提案无关</li>
+          <li>实时推理服务 / ONNX 导出 — 生产级优化，导师未要求则不做</li>
+          <li>多语言扩展到西班牙语 / 日语 — zh / zh-HK / en 已覆盖三语主要评审团</li>
+        </ul>
+
+        <div class="quote-box gold">
+          <p>工程可以打 90 分，6.15 前的提案叙事目前只有 70 分——先把蓝图讲圆，再深挖。</p>
+          <p style="margin-top:12px;font-size:16px;color:var(--text-muted)">注：M8.3a/b/c 服务化补全 + M8.4a 多语言已提前完成；6.07 后所有 PR 走「能写进计划书吗」过滤器。</p>
+        </div>
+      </section>
+
+      <!-- 三、关键问题 -->
+      <section id="s3">
+        <h2><span class="num">Section 03</span>关键问题分析</h2>
+
+        <h3>3.1 导师 / 评委最可能追问什么？</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>#</th><th>质疑</th><th>合理回应</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1</td>
+                <td>「AUC 只有 0.78？」</td>
+                <td>我们强调<strong>因果推理与可解释决策</strong>，而非单纯刷榜。0.78 已接近 Home Credit 业界水平（0.81），附加价值在 CATE / 反事实 / 四象限</td>
+              </tr>
+              <tr>
+                <td>2</td>
+                <td>「反欺诈用伪标签？」</td>
+                <td>这是<strong>概念验证</strong>，证明方法论与业务规则可结合；生产需银行提供真实标注，已在路线图 Phase 2 明确</td>
+              </tr>
+              <tr>
+                <td>3</td>
+                <td>「Home Credit 不是 BOCHK 数据？」</td>
+                <td>Home Credit 是<strong>公开验证平台</strong>；因果方法论可迁移，BOCHK 对接需脱敏真实数据 — 已在落地路线图中</td>
+              </tr>
+              <tr>
+                <td>4</td>
+                <td>「因果发现可信吗？」</td>
+                <td>PC + NOTEARS 融合 + 领域 DAG 注入 + DoWhy 4 类 refuter + E-value；合成数据 100% 边召回，真实数据与领域 DAG 重叠率 100%（5/5）</td>
+              </tr>
+              <tr>
+                <td>5</td>
+                <td>「代码谁写的？团队懂吗？」</td>
+                <td>AI 辅助开发 + 212 项单测保障；6.15 前安排核心模块走读，确保答辩时<strong>至少 2 人</strong>能深入讲解</td>
+              </tr>
+              <tr>
+                <td>6</td>
+                <td>「凭什么说能迁移到 BOCHK？」</td>
+                <td>三阶段路线：<strong>Home Credit 验证方法论 → 银行脱敏数据试点 → 生产嵌入</strong>；领域 DAG 是变量级而非样本级，可直接对接；M8.1 公平性审计对位 HKMA 可解释性要求</td>
+              </tr>
+              <tr>
+                <td>7</td>
+                <td>「SHAP × 因果四象限有学术先例吗？」</td>
+                <td>SHAP（Lundberg 2017）+ DoWhy（Sharma 2019）的<strong>组合</strong>未见先例；TRUSTED/UNTRUSTED/MASKED/NEGLIGIBLE 是我们为信贷场景原创的分类法，可发表</td>
+              </tr>
+              <tr>
+                <td>8</td>
+                <td>「DiCE 反事实的可执行性？」</td>
+                <td>DiCE 输出包含 3 套候选方案 + 因果可信度评分 + 不可变特征锁死（如 DAYS_BIRTH/CODE_GENDER）；信贷员拿到的是「按这个调整，预计违约率降 X%」而非「模糊建议」</td>
+              </tr>
+              <tr>
+                <td>9</td>
+                <td>「计算成本多大？」</td>
+                <td>完整 16 步 Pipeline ~220s（CPU，单机），其中 LightGBM 训练 &lt;60s、因果发现 &lt;120s、DiCE 单样本 &lt;5s；<strong>无需 GPU</strong>，HK$500 量级算力即可跑全</td>
+              </tr>
+              <tr>
+                <td>10</td>
+                <td>「M8.4 多语言中文金融术语怎么对齐？」</td>
+                <td>仅翻译<strong>章节标题与表头</strong>（如「因果敘事 / 模型層面」），叙述体保留英文避免歧义；港式措辞（層面 / 對照 / 穩健性）参考 HKMA 公开文件用词</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>3.2 技术栈（已定，计划书直接引用）</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>模块</th><th>选型</th><th>理由</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><strong>预测基座</strong></td><td>LightGBM 4.6（CPU 默认 / GPU 可选）</td><td>表格数据 SOTA，AUC 0.7803，推理 &lt;10ms；GPU 接入 M6 完工</td></tr>
+              <tr><td><strong>多表因果特征</strong></td><td>5 张二级表聚合 → 246 特征（M5）</td><td>bureau / previous_application / POS_CASH / installments / credit_card，单表 30 万行 → 246 维</td></tr>
+              <tr><td><strong>因果发现</strong></td><td>PC + NOTEARS + 领域 DAG 融合</td><td>约束与得分方法融合；M8.2g 已加 EXT_SOURCE_1/2/3 → TARGET 边</td></tr>
+              <tr><td><strong>因果效应</strong></td><td>DoWhy 0.14 + EconML 0.16</td><td>ATE / CATE（LinearDML + SparseLinearDML + CausalForestDML 三法交叉验证）+ 4 类 refuter + E-value</td></tr>
+              <tr><td><strong>反事实</strong></td><td>DiCE NSGA-II 多目标 + 因果约束</td><td>只改可干预特征（IMMUTABLE 锁死 DAYS_BIRTH/CODE_GENDER 等，SEMI_MUTABLE 限幅 50%）</td></tr>
+              <tr><td><strong>可解释性</strong></td><td>SHAP TreeSHAP × 因果四象限</td><td>TRUSTED / UNTRUSTED / MASKED / NEGLIGIBLE 四象限分类</td></tr>
+              <tr><td><strong>因果叙事（M8.2）</strong></td><td>CausalNarrative + DAG 路径追溯 + K-NN k=10 同类对照 + 解释稳健性</td><td>三层（model / cohort / individual）+ 多语言渲染（zh / zh-HK / en）</td></tr>
+              <tr><td><strong>反欺诈三件套</strong></td><td>三分类子模型 + 包装资质因果一致性 + 养流水因果去噪</td><td>fraudulent / non_malicious / systemic，4 维评分 + 5 级路由（REJECT_FRAUD / REJECT_PACKAGING / REVIEW_DENOISED / REVIEW_BORDERLINE / PROCEED）</td></tr>
+              <tr><td><strong>公平性审计（M8.1）</strong></td><td>DP / EO / DI 三指标 × 4 默认切片</td><td>性别 / 年龄 / 收入 / 学历；阈值对位 HKMA &amp; EU AI Act；FraudGuardConfig YAML 可配置</td></tr>
+              <tr><td><strong>服务层</strong></td><td>FastAPI 0.136 + Streamlit 1.58 + lifespan 自动加载 registry</td><td>5 端点 + 4 页 Demo，registry_v1.pkl 7.4MB 缓存二次启动 &lt;5s</td></tr>
+              <tr><td><strong>漂移监控</strong></td><td>PSI（3 级）+ 路由分布 baseline 持久化</td><td>特征 PSI + 路由 PSI；M7 baseline 写入 routing_baseline.json，跨 pipeline 复用</td></tr>
+              <tr><td><strong>主数据集</strong></td><td>Home Credit Default Risk（307,511 行 × 122 列 + 5 二级表）</td><td>Kaggle 公开 + 8 表原始 schema；我们只取 application_train.csv + 5 张二级表（bureau / prev / POS / INST / CC）</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 id="s3-blueprint">3.3 蓝图怎么「吹」才合理？</h3>
+        <p>导师指导阶段，评委看的不是「我们又加了一个功能」，而是<strong>愿景是否清晰、边界是否诚实、落地是否可信</strong>。</p>
+
+        <h4>✅ 可以 confidently 讲</h4>
+        <ul>
+          <li>范式升级：预测 → 归因 → 决策 → 反欺诈闭环，业界少有完整实现</li>
+          <li>SHAP × 因果四象限是<strong>原创组合创新</strong>，有学术发表潜力</li>
+          <li>工程完成度极高：133 测试、可复现 Pipeline、公开仓库</li>
+          <li>BOCHK 痛点对齐：薄信用人群、可解释 AI、反欺诈多维覆盖</li>
+          <li>成本低：CPU 可训练，算力约 HK$500 量级（计划书已有估算）</li>
+        </ul>
+
+        <h4>⚠️ 要主动限界、不要 over-promise</h4>
+        <ul>
+          <li>不说「已对接 BOCHK 生产系统」— 说「验证平台 + 迁移路线图」</li>
+          <li>不说「反欺诈模型已生产就绪」— 说「规则伪标签概念验证，待真实标注校准」</li>
+          <li>不说「AUC 超越业界」— 说「接近 leaderboard，核心竞争力在因果决策层」</li>
+          <li>不说「因果图 100% 正确」— 说「领域知识 + 数据驱动融合，经 refuter 稳健性检验」</li>
+        </ul>
+
+        <div class="quote-box">
+          <p><strong>定位公式</strong>：「工程上我们已经走通 MVP；商业上我们是可迁移的方法论 + 诚实的概念验证；6.15 提交的是<strong>蓝图与路线</strong>，不是最终产品。」</p>
+        </div>
+      </section>
+
+      <!-- 四、行动建议 -->
+      <section id="s4">
+        <h2><span class="num">Section 04</span>行动建议（按优先级排序）</h2>
+
+        <h3>P0：6 月 15 日前 — 计划书 + 蓝图（不求加功能）</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>#</th><th>任务</th><th>负责人</th><th>工时</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>1</td><td><strong>计划书定稿</strong>：整合 6 亮点、BOCHK 痛点、技术栈、三阶段落地、风险与边界</td><td>陈天元 + 李定泉</td><td>2 天</td></tr>
+              <tr><td>2</td><td><strong>蓝图一页纸</strong>：愿景 / 架构图 / Phase1–3 / 与 BOCHK 对接点（给导师第一眼）</td><td>陈天元</td><td>0.5 天</td></tr>
+              <tr><td>3</td><td><strong>答辩 Q&A 手册</strong>：5 个高频质疑 + 标准回应（见 3.1 节扩展）</td><td>卢鸿璋 + 李定泉</td><td>1 天</td></tr>
+              <tr><td>4</td><td><strong>核心代码走读</strong>：见下方 12 模块清单，每人认领 3 个、10 分钟讲解</td><td>李定泉 + 许海波</td><td>1 天</td></tr>
+              <tr><td>5</td><td><strong>Demo 脚本定稿</strong>：Streamlit 固定 1 条客户案例（评分→四象限→反事实→决策报告）</td><td>许海波</td><td>0.5 天</td></tr>
+              <tr><td>6</td><td><strong>确认参赛材料</strong>：组别、赛道（普惠金融 + 大数据）、公司 / 团队资质</td><td>陈天元</td><td>0.5 天</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>P0 #4 子任务：核心模块走读清单（12 个文件 / 每人认领 3 个）</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>#</th><th>模块</th><th>文件</th><th>讲解人</th><th>核心问题</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>1</td><td>领域 DAG</td><td>src/causal/home_credit_graph.py</td><td>李定泉</td><td>18 节点 / 36 边如何定义？acyclic 验证？</td></tr>
+              <tr><td>2</td><td>混合因果发现</td><td>src/causal/discovery.py</td><td>李定泉</td><td>PC + NOTEARS 融合算法？边召回率？</td></tr>
+              <tr><td>3</td><td>ATE / 反驳</td><td>src/causal/estimate.py + src/causal/refute.py</td><td>李定泉</td><td>DoWhy CausalModel 流程？4 类 refuter 阈值？</td></tr>
+              <tr><td>4</td><td>CATE</td><td>src/causal/cate.py</td><td>许海波</td><td>3 种 EconML 方法的 Spearman 交叉验证？</td></tr>
+              <tr><td>5</td><td>SHAP 四象限</td><td>src/explain/shap_explain.py</td><td>许海波</td><td>causal_proxy 怎么算？阈值动态调？</td></tr>
+              <tr><td>6</td><td>反事实 DiCE</td><td>src/explain/counterfactual.py</td><td>许海波</td><td>IMMUTABLE / SEMI_MUTABLE 掩码？causal_plausibility 公式？</td></tr>
+              <tr><td>7</td><td>决策建议</td><td>src/explain/decision.py</td><td>许海波</td><td>信用分 300-850 公式？A-E 分级阈值？</td></tr>
+              <tr><td>8</td><td>证据链</td><td>src/explain/evidence.py</td><td>李定泉</td><td>4 类证据模板？中英文填充？</td></tr>
+              <tr><td>9</td><td>因果叙事（M8.2）</td><td>src/explain/causal_narrative.py</td><td>李定泉</td><td>3 层叙事 + DAG 路径追溯？解释稳健性 20× ±10%？</td></tr>
+              <tr><td>10</td><td>反欺诈三件套</td><td>src/fraud/{three_class,packaging,denoising,pipeline}.py</td><td>李定泉</td><td>伪标签规则？5 级路由？FraudGuardConfig YAML？</td></tr>
+              <tr><td>11</td><td>公平性审计（M8.1）</td><td>src/fairness/{metrics,slicing,visualize}.py</td><td>许海波</td><td>DP/EO/DI 定义？4 默认切片？HKMA 阈值？</td></tr>
+              <tr><td>12</td><td>服务化（M8.3）+ 多语言（M8.4）</td><td>src/api/{app,services,routes,dependencies,schemas}.py + src/frontend/{app,pages}.py + src/explain/causal_narrative.py::render_markdown</td><td>许海波 + 李定泉</td><td>FastAPI lifespan？registry_v1.pkl 缓存？多语言？</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p style="font-size:14px;color:var(--text-muted)">走读产物：每人 10 分钟录屏 + 配套 cheat sheet（Q&A 关键词 + 翻车兜底话术），打包进 Q&A 手册附录。</p>
+
+        <h3>P1：6 月 16 日起 — 导师反馈后深化（计划书过了再猛干）</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>#</th><th>任务</th><th>负责人</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>1</td><td><strong>吸收导师意见</strong>：调整叙事重点（因果 vs 反欺诈 vs 普惠）</td><td>陈天元</td><td>开一次复盘会</td></tr>
+              <tr><td>2</td><td><strong>UI / Demo 打磨</strong>：统一视觉，演示流程串联</td><td>许海波</td><td>1–2 周</td></tr>
+              <tr><td>3</td><td><strong>反欺诈模块校准</strong>：伪标签敏感性分析 + 业务规则文档化</td><td>李定泉</td><td>需业务输入</td></tr>
+              <tr><td>4</td><td><strong>复现实验包</strong>：一键 README + 关键指标截图，方便评委复现</td><td>许海波 + 李定泉</td><td>增强可信度</td></tr>
+              <tr><td>5</td><td><strong>提交材料</strong>：计划书终稿 + Demo 视频 + 技术附录</td><td>全组</td><td>按大赛节点</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>各成员分工</h3>
+        <div class="card member">
+          <div class="member-name">陈天元</div>
+          <div class="member-role">队长 / 项目统筹</div>
+          <ol>
+            <li>计划书与蓝图总稿、参赛行政材料</li>
+            <li>对接导师反馈，调整团队叙事重心</li>
+            <li>答辩主讲：愿景、BOCHK 价值、落地路线</li>
+          </ol>
+        </div>
+        <div class="card member">
+          <div class="member-name">李定泉</div>
+          <div class="member-role">因果推理 / ML 核心</div>
+          <ol>
+            <li>计划书技术章节：6 亮点、Pipeline、指标与验证标准</li>
+            <li>核心模块走读与答辩技术问答</li>
+            <li>6.15 后按导师意见深化模型与反欺诈模块</li>
+          </ol>
+        </div>
+        <div class="card member">
+          <div class="member-name">许海波</div>
+          <div class="member-role">数据工程 / 仓库与 Demo</div>
+          <ol>
+            <li>GitHub 仓库维护、数据集文档与引用补全</li>
+            <li>Streamlit Demo 脚本与演示环境稳定性</li>
+            <li>复现实验包与 Pipeline 一键运行说明</li>
+          </ol>
+        </div>
+        <div class="card member">
+          <div class="member-name">卢鸿璋</div>
+          <div class="member-role">独立审计 / 叙事与质量把关</div>
+          <ol>
+            <li>审计报告结论融入计划书「风险与边界」章节</li>
+            <li>Q&A 手册、over-promise 清单审查</li>
+            <li>计划书定稿前的最后一轮「评委视角」通读</li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- 五、导师答辩蓝图 -->
+      <section id="s5">
+        <h2><span class="num">Section 05</span>导师答辩蓝图（6.15 前核心交付）</h2>
+
+        <h3>5.1 三阶段落地路线（计划书必写）</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>阶段</th><th>目标</th><th>数据</th><th>产出</th><th>时间</th><th>资源 / 算力</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Phase 1</strong><br>概念验证（现在）</td>
+                <td>证明「预测→因果→决策→反欺诈」闭环可行</td>
+                <td>Home Credit 公开数据（307K）</td>
+                <td>MVP Pipeline + Demo + <strong>212 单测</strong> + 16 步端到端</td>
+                <td><strong>已完成</strong>（截至 6.07）</td>
+                <td>CPU 单机 · &lt; HK$500</td>
+              </tr>
+              <tr>
+                <td><strong>Phase 2</strong><br>银行试点</td>
+                <td>接入 BOCHK 脱敏样本，校准评分与反欺诈</td>
+                <td>银行脱敏信贷数据 + 真实欺诈标注</td>
+                <td>定制 DAG + 本地化 CATE + A/B 对比 + 公平性二次校验</td>
+                <td>3–6 个月</td>
+                <td>需 BOCHK 信贷 + 风控 + 合规三方协调</td>
+              </tr>
+              <tr>
+                <td><strong>Phase 3</strong><br>生产嵌入</td>
+                <td>作为信贷审批增强模块，满足 HKMA 可解释性</td>
+                <td>生产级数据管道 + 监控</td>
+                <td>PSI 漂移告警 + 人工复核闭环 + 审计日志 + HKMA 审计包</td>
+                <td>6–12 个月</td>
+                <td>需数据中台 + K8s/监控栈（用户当前约束未要求）</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h4>Phase 1 验收标准（已全部达成）</h4>
+        <ul>
+          <li>AUC ≥ 0.78（实测 0.7803）</li>
+          <li>16 步 Pipeline 一键跑通，&lt; 5 分钟</li>
+          <li>FastAPI 5 端点 + Streamlit 4 页 Demo 全通</li>
+          <li>212 个单测 100% 通过（11.28s）</li>
+          <li>212 个测试 + 19 张图表 + 3 份决策报告 JSON</li>
+        </ul>
+
+        <h4>Phase 2 关键决策点（需 BOCHK 输入）</h4>
+        <ul>
+          <li>真实欺诈标注的获取方式（人工标注 / 已知案例 / 业务回查）</li>
+          <li>敏感属性（性别 / 年龄 / 收入）的合规使用边界</li>
+          <li>数据脱敏与隐私保护方案（联邦学习 / 差分隐私）</li>
+          <li>A/B 测试的对照组设计（按地区 / 业务线 / 时间窗）</li>
+        </ul>
+
+        <h3>5.2 系统架构（蓝图一句话版）</h3>
+        <div class="card">
+          <pre class="pipeline">申请数据 + 历史信贷 + 客户属性
+        │
+        ├─ [预测] LightGBM → 违约概率（AUC 0.78）
+        ├─ [因果发现] PC + NOTEARS + 领域 DAG → 因果图
+        ├─ [效应] DoWhy + EconML → ATE / CATE（异质政策效果）
+        ├─ [解释] SHAP × 四象限 → TRUSTED / UNTRUSTED / …
+        ├─ [反事实] DiCE → 「若调整 X，风险降 Y%」
+        ├─ [决策] 中英报告 → 信贷员 / 客户话术
+        └─ [反欺诈] 三分类 + 包装资质 + 养流水去噪</pre>
+        </div>
+
+        <h3>5.3 给导师的 3 分钟 pitch 结构</h3>
+        <ol>
+          <li><strong>痛点（30s）</strong>：传统评分只预测、不决策；薄信用人群服务不足；AI 黑箱难通过监管</li>
+          <li><strong>方案（60s）</strong>：CausalCredit 六层闭环，SHAP 四象限是差异化创新</li>
+          <li><strong>证据（60s）</strong>：AUC 0.78 + 133 测试 + 可复现 Pipeline + 决策报告样例</li>
+          <li><strong>边界（30s）</strong>：Home Credit 验证平台；反欺诈为概念验证；生产需银行数据</li>
+          <li><strong>诉求（30s）</strong>：希望导师帮我们把叙事重心放在「因果决策」还是「反欺诈」— 便于 6.15 后聚焦</li>
+        </ol>
+
+        <h3>5.4 差异化 vs 传统方案</h3>
+        <div class="table-wrap">
+          <table>
+            <caption class="sr-only">CausalCredit 与传统信用评分、GNN 欺诈检测的差异化对比，星级为五分制</caption>
+            <thead>
+              <tr><th>维度</th><th>CausalCredit</th><th>传统信用评分</th><th>GNN 欺诈检测</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>可解释性</td><td class="severity-low">★★★★★</td><td>★★</td><td>★★</td></tr>
+              <tr><td>因果推理</td><td class="severity-low">★★★★★</td><td>❌</td><td>❌</td></tr>
+              <tr><td>决策建议</td><td class="severity-low">★★★★★</td><td>❌</td><td>❌</td></tr>
+              <tr><td>反欺诈覆盖</td><td>★★★★</td><td>★★</td><td>★★★★</td></tr>
+              <tr><td>工程完成度</td><td class="severity-low">★★★★★</td><td>★★★</td><td>★★★</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 六、风险评估 -->
+      <section id="s6">
+        <h2><span class="num">Section 06</span>风险评估</h2>
+        <p class="lead">来源：独立审计报告 v2.0（2026-06-06），已纳入计划书「风险与缓解」章节。</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>风险</th><th>可能性</th><th>影响</th><th>缓解</th><th>负责人</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>反欺诈伪标签无 ground truth</strong></td>
+                <td class="severity-high">高</td>
+                <td class="severity-high">高</td>
+                <td>主动定位为概念验证；答辩时先讲边界；Phase 2 获取银行真实标注</td>
+                <td>李定泉</td>
+              </tr>
+              <tr>
+                <td><strong>AUC 触及数据天花板</strong></td>
+                <td class="severity-mid">中</td>
+                <td class="severity-mid">中</td>
+                <td>叙事重心转向因果决策层，不跟 leaderboard 硬卷</td>
+                <td>陈天元</td>
+              </tr>
+              <tr>
+                <td><strong>Home Credit ≠ BOCHK 场景</strong></td>
+                <td class="severity-mid">中</td>
+                <td class="severity-mid">中</td>
+                <td>强调方法论可迁移 + 三阶段路线图 + 大湾区薄信用人群类比</td>
+                <td>陈天元</td>
+              </tr>
+              <tr>
+                <td><strong>AI 生成代码，团队理解不足</strong></td>
+                <td class="severity-mid">中</td>
+                <td class="severity-high">高</td>
+                <td>6.15 前核心模块走读；212 单测兜底；至少 2 人可 deep dive</td>
+                <td>李定泉 + 许海波</td>
+              </tr>
+              <tr>
+                <td><strong>6.15 前过度开发分散精力</strong></td>
+                <td class="severity-mid">中</td>
+                <td class="severity-high">高</td>
+                <td>本文件明确节奏：<strong>先提案后深化</strong>，冻结新功能至计划书提交</td>
+                <td>全组</td>
+              </tr>
+              <tr>
+                <td><strong>API / UI 演示效果一般</strong></td>
+                <td class="severity-low">低</td>
+                <td class="severity-mid">中</td>
+                <td>6.15 前保证 1 条稳定 Demo 路径；UI 打磨放 P1</td>
+                <td>许海波</td>
+              </tr>
+              <tr>
+                <td><strong>演示当天网络 / 环境故障</strong></td>
+                <td class="severity-low">低</td>
+                <td class="severity-high">高</td>
+                <td>演示前 1 小时本地离线跑通 + 录屏兜底；registry_v1.pkl 缓存 7.4MB 可 U 盘携带</td>
+                <td>许海波</td>
+              </tr>
+              <tr>
+                <td><strong>团队成员临时退出</strong></td>
+                <td class="severity-low">低</td>
+                <td class="severity-high">高</td>
+                <td>P0 #4 模块走读确保 12 个模块每个至少 1 人能讲；2 人可 deep dive</td>
+                <td>陈天元</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>综合竞争力（审计结论）</h3>
+        <div class="card-grid">
+          <div class="card reveal">
+            <h4>创新性</h4>
+            <p class="rating" role="img" aria-label="创新性：四星半，满分五星"><span class="stars" aria-hidden="true">★★★★☆</span></p>
+            <p>SHAP 四象限最独特</p>
+          </div>
+          <div class="card reveal">
+            <h4>工程完成度</h4>
+            <p class="rating" role="img" aria-label="工程完成度：五星，满分五星"><span class="stars" aria-hidden="true">★★★★★</span></p>
+            <p>8 里程碑 · 133 测试</p>
+          </div>
+          <div class="card reveal">
+            <h4>获奖竞争力</h4>
+            <p class="rating" role="img" aria-label="获奖竞争力：四星半，满分五星"><span class="stars" aria-hidden="true">★★★★☆</span></p>
+            <p>伪标签叙事修好后可达五星水平</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 七、下一步 -->
+      <section id="s7">
+        <h2><span class="num">Section 07</span>下一步（今天就可以开始）</h2>
+
+        <h4>1. 冻结功能，启动「提案模式」</h4>
+        <p>至 6.15 前不再新增 Pipeline 步骤或大模块；所有 PR 需问一句：「这能写进计划书吗？」</p>
+
+        <h4>2. 计划书目录骨架（可直接开写）</h4>
+        <div class="card">
+          <pre class="pipeline">1. 项目概述与一句话价值
+2. BOCHK 痛点对齐（C1 薄信用 + 可解释 AI）
+3. 6 大技术亮点 + 架构图
+4. 实验结果（AUC / CATE / 四象限 / 决策报告样例）
+5. 三阶段落地路线
+6. 风险、边界与合规（含伪标签说明）
+7. 团队分工与里程碑
+8. 附录：复现说明 + 审计摘要</pre>
+        </div>
+
+        <h4>3. 今天的第一件事</h4>
+        <p>陈天元 + 李定泉：用 2 小时把<strong>蓝图一页纸</strong>和<strong>3 分钟 pitch</strong>草稿写出来，发给全组对齐——比再跑一遍 Pipeline 更重要。</p>
+      </section>
+
+      <!-- 八、复现说明 + 资产清单 -->
+      <section id="s8">
+        <h2><span class="num">Section 08</span>复现说明 &amp; 资产清单</h2>
+        <p class="lead">评委复现路径 &lt; 30 分钟；本节作为计划书附录「复现说明」章节底稿。</p>
+
+        <h3>8.1 一键复现路径（CPU 即可）</h3>
+        <div class="card">
+          <pre class="pipeline"># 1. 环境准备（约 2 分钟）
+conda activate ldq_cc                  # 已装 lightgbm 4.6 / shap 0.48 / econml 0.16 / dowhy 0.14 / dice_ml / causal-learn
+pip install -e ".[dev]"
+
+# 2. 数据准备（Home Credit 已下载 → data/home-credit-default-risk/application_train.csv）
+ls -la data/home-credit-default-risk/   # 确认 ~30 万行存在
+
+# 3. 一键跑通 16 步端到端 Pipeline（约 220 秒）
+python -m src.run_pipeline             # 输出 19 张图 + 3 份决策报告 + registry_v1.pkl 缓存
+
+# 4. 启动 FastAPI 演示
+uvicorn src.api.app:app --port 8000    # → http://localhost:8000/docs
+# 关键端点: /api/v1/score, /explain, /counterfactual, /causal-effect, /health
+
+# 5. 启动 Streamlit 演示
+streamlit run src/frontend/app.py      # → http://localhost:8501
+# 4 页: Score Dashboard / Causal Visualization / Counterfactual Simulator / Decision Panel
+
+# 6. 跑测试套件验证
+pytest tests/ -v --cov=src              # 212 测试 · 11.28s</pre>
+        </div>
+
+        <h3>8.2 已交付的工程资产清单</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>类别</th><th>数量 / 路径</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><strong>代码模块</strong></td><td>23 个 .py 文件 · 7 个子包</td><td>data / features / causal / models / explain / fraud / fairness / api / frontend / monitoring / utils</td></tr>
+              <tr><td><strong>测试用例</strong></td><td>21 个 test_*.py · 212 个测试</td><td>覆盖率 100% 关键路径；11.28s 全跑通</td></tr>
+              <tr><td><strong>图表</strong></td><td>19 张 PNG (output/figures/)</td><td>01-11 pipeline 主体 + 12-14 M7 反欺诈 / M8.1 公平性 + 15-16 M8.2 叙事</td></tr>
+              <tr><td><strong>决策报告</strong></td><td>3 份 JSON (output/decision_reports/)</td><td>含信用分 / 风险等级 / ATE / CATE / 反事实 / 公平性 / 因果叙事 v2</td></tr>
+              <tr><td><strong>路由 baseline</strong></td><td>routing_baseline.json</td><td>M7 5 级路由分布（PROCEED 0.056 / REVIEW_BORDERLINE 0.906 / REJECT_FRAUD 0.029 / ...）</td></tr>
+              <tr><td><strong>模型缓存</strong></td><td>output/models/registry_v1.pkl (7.4MB)</td><td>含 LightGBM + 25 特征 + LabelEncoders + 训练数据；二次启动 &lt; 5s</td></tr>
+              <tr><td><strong>设计文档</strong></td><td>14 份 .md (docs/)</td><td>完整计划书 / BOCHK 痛点 / 五主题可行性 / 数据集验证 / 4 份 milestone 实现记录 / 行业调研 / 审计报告</td></tr>
+              <tr><td><strong>开发指引</strong></td><td>CLAUDE.md + PROGRESS.md + BENCHMARKS.md + README.md</td><td>4 份项目级文档，覆盖命令 / 架构 / 进度 / 性能基线</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>8.3 关键单点验证（一句话复现每个亮点）</h3>
+        <ul>
+          <li><strong>AUC 0.7803</strong> → <code>python -m src.run_pipeline</code> 第 7 步打印</li>
+          <li><strong>混合因果发现</strong> → <code>pytest tests/test_causal_discovery.py -v</code></li>
+          <li><strong>CATE 交叉验证</strong> → <code>pytest tests/test_cate.py -v</code>，mean |Spearman| 报表</li>
+          <li><strong>DoWhy 反驳</strong> → <code>pytest tests/test_refute.py -v</code>，含 E-value</li>
+          <li><strong>DiCE 反事实</strong> → <code>pytest tests/test_counterfactual.py -v</code></li>
+          <li><strong>SHAP 四象限</strong> → <code>pytest tests/test_shap.py -v</code></li>
+          <li><strong>反欺诈三件套</strong> → <code>pytest tests/test_fraud_*.py -v</code>（3 个文件 · 25 测试）</li>
+          <li><strong>公平性审计</strong> → <code>pytest tests/test_fairness.py -v</code>（11 测试 · 3 指标 × 4 切片）</li>
+          <li><strong>因果叙事 v2</strong> → <code>pytest tests/test_causal_narrative.py -v</code>（17 测试 · 3 层 + 稳健性 + 多语言）</li>
+          <li><strong>服务化</strong> → <code>pytest tests/test_api_smoke.py tests/test_streamlit_smoke.py -v</code>（23 测试）</li>
+        </ul>
+
+        <div class="quote-box">
+          <p><strong>给评委的话</strong>：所有亮点不是「宣称」，是 212 个自动化测试 + 19 张可视化的可复现证据链。30 分钟内可走完端到端 + 抽检任意 3 个亮点的单测。</p>
+        </div>
+      </section>
+
+      <footer>
+        <p><strong>总结</strong>：CausalCredit 工程底座已扎实，方向与 BOCHK 高度契合。6.15 前的核心任务不是「做更多」，而是<strong>把蓝图讲圆、把边界讲诚实、把导师问得住</strong>。计划书过了，再按指导员意见全力深化。</p>
+      </footer>
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      var bar = document.getElementById('progressBar');
+      var backToTop = document.getElementById('backToTop');
+      var menuOpen = document.getElementById('menuOpen');
+      var menuClose = document.getElementById('menuClose');
+      var navDrawer = document.getElementById('navDrawer');
+      var navOverlay = document.getElementById('navOverlay');
+      var mobileNavLinks = document.getElementById('mobileNavLinks');
+      var sidebar = document.querySelector('.nav-sidebar');
+
+      function onScroll() {
+        var h = document.documentElement;
+        var pct = (h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100;
+        var safePct = isNaN(pct) ? 0 : Math.min(100, Math.max(0, pct));
+        bar.style.width = safePct + '%';
+        bar.setAttribute('aria-valuenow', String(Math.round(safePct)));
+        backToTop.classList.toggle('visible', h.scrollTop > 480);
+      }
+
+      function openNav() {
+        navDrawer.classList.add('open');
+        navOverlay.classList.add('open');
+        navOverlay.hidden = false;
+        navDrawer.setAttribute('aria-hidden', 'false');
+        menuOpen.setAttribute('aria-expanded', 'true');
+        document.body.style.overflow = 'hidden';
+      }
+
+      function closeNav() {
+        navDrawer.classList.remove('open');
+        navOverlay.classList.remove('open');
+        navOverlay.hidden = true;
+        navDrawer.setAttribute('aria-hidden', 'true');
+        menuOpen.setAttribute('aria-expanded', 'false');
+        document.body.style.overflow = '';
+      }
+
+      if (sidebar && mobileNavLinks) {
+        mobileNavLinks.innerHTML = sidebar.innerHTML.replace('<div class="nav-label">目录</div>', '');
+        mobileNavLinks.querySelectorAll('a').forEach(function (link) {
+          link.addEventListener('click', closeNav);
+        });
+      }
+
+      menuOpen.addEventListener('click', openNav);
+      menuClose.addEventListener('click', closeNav);
+      navOverlay.addEventListener('click', closeNav);
+      backToTop.addEventListener('click', function () {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') closeNav();
+      });
+
+      document.querySelectorAll('.table-wrap').forEach(function (wrap) {
+        var table = wrap.querySelector('table');
+        if (!table) return;
+        var hint = document.createElement('div');
+        hint.className = 'table-scroll-hint';
+        hint.textContent = '← 左右滑动查看更多 →';
+        wrap.appendChild(hint);
+        function checkScrollable() {
+          wrap.classList.toggle('is-scrollable', table.scrollWidth > wrap.clientWidth + 2);
+        }
+        checkScrollable();
+        wrap.addEventListener('scroll', function () {
+          if (wrap.scrollLeft > 8) hint.style.display = 'none';
+        }, { passive: true });
+        window.addEventListener('resize', checkScrollable);
+      });
+
+      if ('IntersectionObserver' in window && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        var observer = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('is-visible');
+              observer.unobserve(entry.target);
+            }
+          });
+        }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+
+        document.querySelectorAll('.card, .quote-box').forEach(function (el) {
+          if (!el.classList.contains('reveal')) el.classList.add('reveal');
+          observer.observe(el);
+        });
+      } else {
+        document.querySelectorAll('.reveal, .card, .quote-box').forEach(function (el) {
+          el.classList.add('is-visible');
+        });
+      }
+
+      window.addEventListener('scroll', onScroll, { passive: true });
+      onScroll();
+    })();
+  </script>
+</body>
+</html>

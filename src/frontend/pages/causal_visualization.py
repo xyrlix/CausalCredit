@@ -60,6 +60,8 @@ def render(ctx: Dict) -> None:
         ("08_cate_subgroup.png", "CATE by applicant subgroup"),
         ("09_refutation_results.png", "4-refuter robustness check (DoWhy)"),
         ("10_shap_four_quadrant.png", "SHAP × causal-proxy four-quadrant"),
+        ("15_causal_waterfall.png", "M8.2 — Causal narrative waterfall (top features, 4-quadrant colored)"),
+        ("16_narrative_card.png", "M8.2 — Narrative card (3-panel: model / cohort / individual)"),
     ]
     available = [(p, c) for p, c in chart_metas if (fig_dir / p).exists()]
     if not available:
