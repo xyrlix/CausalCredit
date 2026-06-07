@@ -176,6 +176,7 @@ def ctx():
     return {
         "registry": reg, "service": svc,
         "preset_features": dict(PRESET), "preset_name": "Prime Customer",
+        "lang": "en",  # M8.5d
     }
 
 
@@ -277,7 +278,7 @@ def test_decision_panel_renders_narrative_section_zh(fake_streamlit):
         y_prob_train=np.zeros(10),
         run_robustness=False,
     )
-    _render_narrative_section(full, language="zh")
+    _render_narrative_section(full, language="zh", lang="en")
 
 
 def test_decision_panel_renders_narrative_section_en(fake_streamlit):
@@ -295,6 +296,6 @@ def test_decision_panel_renders_narrative_section_en(fake_streamlit):
         X_train=X_train, y_prob_train=np.zeros(10),
         run_robustness=False,
     )
-    _render_narrative_section(full, language="en")
-    _render_narrative_section(full, language="zh-HK")
-    _render_narrative_section(full, language="klingon")  # falls back silently
+    _render_narrative_section(full, language="en", lang="en")
+    _render_narrative_section(full, language="zh-HK", lang="zh-HK")
+    _render_narrative_section(full, language="klingon", lang="en")  # falls back silently

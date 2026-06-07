@@ -1,7 +1,8 @@
 """Page 2: Causal Visualization.
 
 Shows the domain DAG (Graphviz), the pre-computed ATE, and (if cached on
-disk) static visualisations from the M2 pipeline run.
+disk) static visualisations from the M2 pipeline run. Strings flow
+through :func:`src.frontend.i18n.t` keyed on ``ctx["lang"]`` (M8.5d).
 """
 
 from __future__ import annotations
@@ -12,47 +13,52 @@ from typing import Dict
 import pandas as pd
 import streamlit as st
 
+from src.frontend.i18n import t
+
 
 def render(ctx: Dict) -> None:
     registry = ctx["registry"]
+    lang = ctx.get("lang", "en")
 
-    st.title("🔬 Causal Visualization")
-    st.caption("Domain causal DAG, pre-computed ATE, and pipeline charts.")
+    st.title(t("causal.title", lang))
+    st.caption(t("causal.caption", lang))
 
     # ---- Domain DAG ----
-    st.subheader("Domain Causal Graph (DAG)")
+    st.subheader(t("causal.dag_header", lang))
     g = registry.causal_graph
     if g is not None:
         try:
             dot = g.get_dot_string()
             st.graphviz_chart(dot)
         except Exception as exc:
-            st.warning(f"Could not render DAG via Graphviz: {exc}")
-        st.markdown(
-            f"**Treatments:** `{', '.join(g.get_treatment_variables())}`  ·  "
-            f"**Outcome:** `{g.get_outcome_variable()}`  ·  "
-            f"**Nodes:** {len(g.nodes)}  ·  **Edges:** {len(g.edges)}"
-        )
+            st.warning(t("causal.dag_render_failed", lang, exc=exc))
+        st.markdown(t(
+            "causal.treatments_outcome", lang,
+            treatments=", ".join(g.get_treatment_variables()),
+            outcome=g.get_outcome_variable(),
+            n_nodes=len(g.nodes), n_edges=len(g.edges),
+        ))
     else:
-        st.warning("Domain DAG not available in registry.")
+        st.warning(t("causal.dag_unavailable", lang))
 
     # ---- ATE pre-compute ----
-    st.subheader("Average Treatment Effect (ATE)")
+    st.subheader(t("causal.ate_header", lang))
     if registry.ate_summary:
         s = registry.ate_summary
         c1, c2, c3 = st.columns(3)
-        c1.metric("ATE estimate", f"{s['ate']:+.4f}")
-        c2.metric("95% CI lower", f"{s['ci_lower']:+.4f}")
-        c3.metric("95% CI upper", f"{s['ci_upper']:+.4f}")
-        st.caption(f"**Treatment:** {s['treatment']}  ·  **Outcome:** {s['outcome']}  ·  **Method:** {s['method']}")
+        c1.metric(t("causal.ate_estimate", lang), f"{s['ate']:+.4f}")
+        c2.metric(t("causal.ate_ci_lower", lang), f"{s['ci_lower']:+.4f}")
+        c3.metric(t("causal.ate_ci_upper", lang), f"{s['ci_upper']:+.4f}")
+        st.caption(t("causal.ate_caption", lang,
+                     treatment=s['treatment'], outcome=s['outcome'], method=s['method']))
     else:
-        st.info("ATE pre-compute not available — re-train the registry to populate.")
+        st.info(t("causal.ate_unavailable", lang))
 
     # ---- Static charts from the M2 pipeline run ----
-    st.subheader("Pipeline Charts (from `output/figures/`)")
+    st.subheader(t("causal.charts_header", lang))
     fig_dir = Path("output/figures")
     if not fig_dir.exists():
-        st.info("No charts found. Run `python -m src.run_pipeline` first.")
+        st.info(t("causal.no_charts", lang))
         return
     chart_metas = [
         ("06_causal_graph_dag.png", "Discovered DAG (PC + NOTEARS + Domain Knowledge fusion)"),
@@ -65,7 +71,7 @@ def render(ctx: Dict) -> None:
     ]
     available = [(p, c) for p, c in chart_metas if (fig_dir / p).exists()]
     if not available:
-        st.warning("No pipeline charts on disk. Run `python -m src.run_pipeline`.")
+        st.warning(t("causal.no_charts_warn", lang))
         return
     tabs = st.tabs([f"Fig {p[:2]}" for p, _ in available])
     for tab, (path, caption) in zip(tabs, available):

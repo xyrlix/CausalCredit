@@ -2,6 +2,8 @@
 
 User adjusts loan terms with sliders and sees default-probability delta in
 real time, plus DiCE-generated counterfactual scenarios with feature deltas.
+Strings flow through :func:`src.frontend.i18n.t` keyed on ``ctx["lang"]``
+(M8.5d).
 """
 
 from __future__ import annotations
@@ -12,35 +14,33 @@ import pandas as pd
 import streamlit as st
 
 from src.api.schemas import CounterfactualRequest
+from src.frontend.i18n import t
 
 
 def render(ctx: Dict) -> None:
     service = ctx["service"]
     registry = ctx["registry"]
     preset = ctx["preset_features"]
+    lang = ctx.get("lang", "en")
 
-    st.title("🔄 Counterfactual Simulator")
-    st.caption(
-        "Adjust loan terms and see the effect on default probability. "
-        "DiCE NSGA-II also generates causally-plausible scenarios that "
-        "would flip the decision."
-    )
+    st.title(t("cf.title", lang))
+    st.caption(t("cf.caption", lang))
 
     # ---- Baseline ----
-    st.subheader("Baseline applicant")
+    st.subheader(t("cf.baseline_header", lang))
     base_credit = int(preset["AMT_CREDIT"])
     base_annuity = int(preset["AMT_ANNUITY"])
     base_income = int(preset["AMT_INCOME_TOTAL"])
     base_emp = int(preset["DAYS_EMPLOYED"])
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Loan amount", f"{base_credit:,}")
-    c2.metric("Yearly annuity", f"{base_annuity:,}")
-    c3.metric("Yearly income", f"{base_income:,}")
-    c4.metric("Days employed", f"{base_emp:,}")
+    c1.metric(t("cf.metric_loan", lang), f"{base_credit:,}")
+    c2.metric(t("cf.metric_annuity", lang), f"{base_annuity:,}")
+    c3.metric(t("cf.metric_income", lang), f"{base_income:,}")
+    c4.metric(t("cf.metric_emp", lang), f"{base_emp:,}")
 
     # ---- Intervention sliders ----
-    st.subheader("What-if interventions")
+    st.subheader(t("cf.intervention_header", lang))
     s1, s2 = st.columns(2)
     with s1:
         new_credit = st.slider("AMT_CREDIT", base_credit // 4, base_credit * 2, base_credit, step=10000)
@@ -60,28 +60,28 @@ def render(ctx: Dict) -> None:
         interventions["DAYS_EMPLOYED"] = new_emp
 
     if not interventions:
-        st.info("Move at least one slider to see the counterfactual effect.")
+        st.info(t("cf.idle_hint", lang))
         return
 
     req = CounterfactualRequest(features=preset, interventions=interventions)
-    with st.spinner("Running counterfactual…"):
+    with st.spinner(t("cf.spinner", lang)):
         resp = service.counterfactual(req)
 
     a, b, c, d = st.columns(4)
-    a.metric("Baseline P(default)", f"{resp.baseline_probability * 100:.2f}%")
-    b.metric("New P(default)", f"{resp.counterfactual_probability * 100:.2f}%",
+    a.metric(t("cf.metric_base", lang), f"{resp.baseline_probability * 100:.2f}%")
+    b.metric(t("cf.metric_new", lang), f"{resp.counterfactual_probability * 100:.2f}%",
              delta=f"{resp.probability_change * 100:+.2f} pp",
              delta_color="inverse")
-    c.metric("Plausibility", f"{resp.confidence:.2f}")
-    d.metric("Interventions", len(interventions))
+    c.metric(t("cf.metric_plausibility", lang), f"{resp.confidence:.2f}")
+    d.metric(t("cf.metric_n_interventions", lang), len(interventions))
 
-    st.subheader("Intervention details")
+    st.subheader(t("cf.details_header", lang))
     st.json(interventions)
 
     # ---- DiCE NSGA-II generated CFs ----
-    st.subheader("DiCE NSGA-II suggested counterfactuals (causally-plausible)")
+    st.subheader(t("cf.dice_header", lang))
     if registry.counterfactual_reasoner is None:
-        st.warning("CounterfactualReasoner unavailable.")
+        st.warning(t("cf.dice_unavailable", lang))
         return
     try:
         # Pull all features through the same encoder as the model
@@ -92,7 +92,7 @@ def render(ctx: Dict) -> None:
         )
         cfs = cf_res.get("cfs", [])
         if not cfs:
-            st.info("DiCE could not find counterfactuals for this applicant within plausibility bounds.")
+            st.info(t("cf.dice_no_cfs", lang))
             return
         rows = []
         for cf in cfs:

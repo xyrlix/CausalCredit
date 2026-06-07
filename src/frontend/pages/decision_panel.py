@@ -4,6 +4,10 @@ Comprehensive decision report combining score, causal effect, SHAP-driven
 risk factors, and DiCE counterfactual recommendations into a single
 underwriter-facing view. Tab 5 hosts the M8.2 multi-level causal narrative
 (model / cohort / individual / robustness) with multi-language rendering.
+All UI strings flow through :func:`src.frontend.i18n.t` keyed on
+``ctx["lang"]`` (M8.5d). The narrative's own text rendering still uses
+its own language codes (zh / zh-HK / en) — see ``_NARRATIVE_LABELS`` in
+``src.explain.causal_narrative``.
 """
 
 from __future__ import annotations
@@ -17,6 +21,7 @@ import streamlit as st
 
 from src.api.schemas import CreditRequest
 from src.explain.causal_narrative import CausalNarrative
+from src.frontend.i18n import t
 
 
 # ---------------------------------------------------------------------------
@@ -67,8 +72,13 @@ def _build_dag(registry) -> nx.DiGraph:
     return g
 
 
-def _render_narrative_section(narrative: Dict, language: str) -> None:
-    """Render the M8.2 narrative markdown + structured tables in a tab."""
+def _render_narrative_section(narrative: Dict, language: str, lang: str) -> None:
+    """Render the M8.2 narrative markdown + structured tables in a tab.
+
+    ``language`` is the narrative-specific code (zh / zh-HK / en) — it
+    controls the *content* of the narrative text. ``lang`` is the UI
+    language (en / zh / zh-HK) — it controls the surrounding labels.
+    """
     md = CausalNarrative.render_markdown(narrative, language=language)
     st.markdown(md)
 
@@ -76,7 +86,7 @@ def _render_narrative_section(narrative: Dict, language: str) -> None:
     ind = narrative.get("individual_level", {})
     if ind.get("top_features"):
         st.markdown("---")
-        st.markdown("**Top features (per-row SHAP, with DAG paths)**")
+        st.markdown(t("decision.top_features_header", lang))
         rows = []
         for f in ind["top_features"]:
             paths = f.get("dag_paths", [])
@@ -97,14 +107,14 @@ def _render_narrative_section(narrative: Dict, language: str) -> None:
             "MASKED": ind.get("n_masked", 0),
         }
         c1, c2, c3 = st.columns(3)
-        c1.metric("TRUSTED (model + causal agree)", counts["TRUSTED"])
-        c2.metric("UNTRUSTED (model says, no causal)", counts["UNTRUSTED"])
-        c3.metric("MASKED (causal hidden by model)", counts["MASKED"])
+        c1.metric(t("decision.quadrant_trusted", lang), counts["TRUSTED"])
+        c2.metric(t("decision.quadrant_untrusted", lang), counts["UNTRUSTED"])
+        c3.metric(t("decision.quadrant_masked", lang), counts["MASKED"])
 
     rob = narrative.get("robustness")
     if rob:
         st.markdown("---")
-        st.markdown("**Explanation robustness**")
+        st.markdown(t("decision.robustness_header", lang))
         r1, r2, r3 = st.columns(3)
         r1.metric("Stability score", round(rob["stability_score"], 2))
         r2.metric("Top-1 stable", f"{rob['top_1_stable']:.0%}")
@@ -123,33 +133,35 @@ def render(ctx: Dict) -> None:
     registry = ctx["registry"]
     preset = ctx["preset_features"]
     preset_name = ctx["preset_name"]
+    lang = ctx.get("lang", "en")
 
-    st.title("💡 Decision Advisory Panel")
-    st.caption(
-        f"Full decision report for preset **{preset_name}** — combines model "
-        f"score, SHAP explanations, DiCE counterfactual recommendations, and "
-        f"the M8.2 multi-level causal narrative."
-    )
+    st.title(t("decision.title", lang))
+    st.caption(t("decision.caption", lang, preset_name=preset_name))
 
     # Sidebar options for the narrative tab
-    with st.expander("⚙️ Narrative options", expanded=False):
+    with st.expander(t("decision.narrative_options", lang), expanded=False):
+        # Narrative language is independent of UI language — the user may
+        # want English UI but Chinese narrative text, etc. Default to the
+        # narrative code that matches the UI language.
+        default_narrative = lang if lang in ("zh", "zh-HK", "en") else "zh"
+        idx = ["zh", "zh-HK", "en"].index(default_narrative)
         language = st.selectbox(
-            "Narrative language",
+            t("decision.narrative_language", lang),
             options=["zh", "zh-HK", "en"],
             format_func=lambda x: {"zh": "简体中文", "zh-HK": "繁體 (港式)", "en": "English"}[x],
-            index=0,
+            index=idx,
         )
         run_robustness = st.checkbox(
-            "Run robustness test (20 perturbations × TreeSHAP, ~5s extra)",
+            t("decision.narrative_robustness", lang),
             value=True,
         )
 
-    if st.button("📋 Generate decision report", type="primary"):
+    if st.button(t("decision.generate", lang), type="primary"):
         req = CreditRequest(
             applicant_id=preset_name, features=preset,
             include_counterfactual=True, include_explanation=True,
         )
-        with st.spinner("Generating report…"):
+        with st.spinner(t("decision.spinner", lang)):
             resp = service.score(req)
             # ----- M8.2 narrative (computed alongside the main report) -----
             try:
@@ -186,26 +198,26 @@ def render(ctx: Dict) -> None:
 
     resp_dict = st.session_state.get("last_report")
     if resp_dict is None:
-        st.info("Click **Generate decision report** to build the underwriter package.")
+        st.info(t("decision.idle_hint", lang))
         return
 
     # ---- Header ----
     a, b, c, d = st.columns(4)
-    a.metric("Credit Score", resp_dict["score"])
-    b.metric("Default Probability", f"{resp_dict['default_probability'] * 100:.2f}%")
+    a.metric(t("decision.metric_score", lang), resp_dict["score"])
+    b.metric(t("decision.metric_pd", lang), f"{resp_dict['default_probability'] * 100:.2f}%")
     grade_color = {"A": "🟢", "B": "🟢", "C": "🟡", "D": "🟠", "E": "🔴"}.get(resp_dict["risk_grade"], "⚪")
-    c.metric("Risk Grade", f"{grade_color} {resp_dict['risk_grade']}")
-    d.metric("Recommendation", resp_dict["decision_suggestion"].split(" — ")[0])
+    c.metric(t("decision.metric_grade", lang), f"{grade_color} {resp_dict['risk_grade']}")
+    d.metric(t("decision.metric_rec", lang), resp_dict["decision_suggestion"].split(" — ")[0])
 
-    st.markdown(f"> **Underwriting recommendation:** {resp_dict['decision_suggestion']}")
+    st.markdown(f"{t('decision.underwriting_rec', lang)} {resp_dict['decision_suggestion']}")
 
     # ---- Tabs ----
     t_risk, t_causal, t_cf, t_narr, t_raw = st.tabs([
-        "1️⃣ Risk factors (SHAP)",
-        "2️⃣ Causal evidence",
-        "3️⃣ Counterfactual scenarios",
-        "📖 Causal Narrative (M8.2)",
-        "🛠 Raw JSON",
+        t("decision.tab_risk", lang),
+        t("decision.tab_causal", lang),
+        t("decision.tab_cf", lang),
+        t("decision.tab_narr", lang),
+        t("decision.tab_raw", lang),
     ])
 
     with t_risk:
@@ -219,7 +231,7 @@ def render(ctx: Dict) -> None:
                 use_container_width=True, hide_index=True,
             )
         else:
-            st.info("No SHAP explanation in this response.")
+            st.info(t("decision.no_shap", lang))
 
     with t_causal:
         if resp_dict.get("causal_effect"):
@@ -232,12 +244,12 @@ def render(ctx: Dict) -> None:
                 f"- **Method:** {ce.get('method')}"
             )
         else:
-            st.info("No causal effect summary available.")
+            st.info(t("decision.no_causal", lang))
 
     with t_cf:
         cfs = resp_dict.get("counterfactual") or []
         if not cfs or "error" in (cfs[0] if cfs else {}):
-            st.info("No counterfactual scenarios found.")
+            st.info(t("decision.no_cfs", lang))
         else:
             rows = []
             for cf in cfs:
@@ -259,18 +271,14 @@ def render(ctx: Dict) -> None:
             if err:
                 st.error(f"Narrative generation failed: {err}")
             else:
-                st.info(
-                    "Click **Generate decision report** above to produce the "
-                    "M8.2 multi-level causal narrative (model / cohort / "
-                    "individual / robustness)."
-                )
+                st.info(t("decision.narrative_idle", lang))
         else:
             lang_now = st.session_state.get("last_narrative_language", "zh")
             if lang_now != language:
                 st.caption(f"Re-rendering in **{language}**…")
                 st.session_state["last_narrative_language"] = language
-            _render_narrative_section(narr, language=language)
-            with st.expander("View raw narrative dict"):
+            _render_narrative_section(narr, language=language, lang=lang)
+            with st.expander(t("decision.view_raw_narrative", lang)):
                 st.json(narr)
 
     with t_raw:
