@@ -60,6 +60,18 @@ frontend:
   theme: "light"
   api_url: "http://localhost:8000"
 
+# M8.5c: production-grade middleware (rate limit / API key / PII).
+# All three are off by default so dev / tests need no setup. Production
+# sets the values here or via env vars:
+#   CAUSALCREDIT_API_KEY, CAUSALCREDIT_ADMIN_API_KEY,
+#   CAUSALCREDIT_RATE_LIMIT_PER_SEC, CAUSALCREDIT_PII_FILTER
+# (env wins over YAML).
+middleware:
+  api_key: ""              # X-API-Key for /api/v1/* (inference)
+  admin_api_key: ""        # X-Admin-API-Key for /api/v1/admin/*
+  rate_limit_per_sec: 0    # 0 = disabled; 50 = 50 req/s/IP
+  pii_filter: true         # mask direct identifiers + coarsen quasi-identifiers
+
 # M8.1d: anti-fraud routing thresholds (overridable from CLI / API)
 # Routing priority (highest first):
 #   REJECT_FRAUD     — fraud_score >= fraud_reject_threshold
