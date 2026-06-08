@@ -138,3 +138,65 @@ def test_build_default_slices(synth):
     assert set(slices.keys()) == {"gender", "age_group", "income_group", "education_group"}
     for k, v in slices.items():
         assert len(v) == len(g)
+
+
+# ---------------------------------------------------------------------------
+# Small-group filter
+# ---------------------------------------------------------------------------
+class TestMinGroupSize:
+    def test_small_group_filter_excludes_tiny_groups(self):
+        """Groups with < min_group_size samples must be excluded from DI/DP/EO."""
+        from src.fairness.metrics import (
+            demographic_parity_gap,
+            disparate_impact_ratio,
+            summarize_fairness,
+        )
+        # 3 groups: 200 F, 200 M, 5 OTHER (tiny)
+        rng = np.random.default_rng(7)
+        n_f, n_m, n_o = 200, 200, 5
+        # Deterministic selection rates: F=20/200=0.10, M=10/200=0.05, OTHER=0
+        y_pred = np.array(
+            [1] * 20 + [0] * (n_f - 20)
+            + [1] * 10 + [0] * (n_m - 10)
+            + [0] * n_o
+        )
+        groups = np.array(["F"] * n_f + ["M"] * n_m + ["OTHER"] * n_o)
+        y_true = np.zeros_like(y_pred)
+        y_score = y_pred.astype(float)
+        # With min_group_size=100, OTHER excluded → DP/EO/DI from F vs M only.
+        # F=0.10, M=0.05 → DP=0.05, DI=0.5 (real fairness concern).
+        s = summarize_fairness(
+            "gender", y_true, y_pred, y_score, groups, min_group_size=100,
+        )
+        assert "OTHER" in s.groups_filtered
+        assert s.dp_gap == pytest.approx(0.05, abs=1e-9)
+        assert s.di_ratio == pytest.approx(0.5, abs=1e-9)
+
+    def test_min_group_size_default_zero_keeps_all(self):
+        """min_group_size=0 (default) keeps tiny groups — backward compatible."""
+        from src.fairness.metrics import disparate_impact_ratio
+        rng = np.random.default_rng(7)
+        n_f, n_m, n_o = 200, 200, 5
+        y_pred = np.array(
+            [1] * 20 + [0] * (n_f - 20)
+            + [1] * 10 + [0] * (n_m - 10)
+            + [0] * n_o
+        )
+        groups = np.array(["F"] * n_f + ["M"] * n_m + ["OTHER"] * n_o)
+        di = disparate_impact_ratio(y_pred, groups)
+        # With min_group_size=0, OTHER (sel=0) is included → DI = 0
+        assert di == pytest.approx(0.0, abs=1e-9)
+
+    def test_demographic_parity_gap_with_filter(self):
+        from src.fairness.metrics import demographic_parity_gap
+        # 300 each (F/M/X), selection rates F=0.10, M=0.05, X=0
+        y_pred = np.array(
+            [1] * 30 + [0] * 270      # F: 30/300 = 0.10
+            + [1] * 15 + [0] * 285    # M: 15/300 = 0.05
+            + [0] * 300               # X: 0/300 = 0
+        )
+        groups = np.array(["F"] * 300 + ["M"] * 300 + ["X"] * 300)
+        # min_group_size=50 keeps all → DP = 0.10 − 0 = 0.10
+        assert demographic_parity_gap(y_pred, groups, min_group_size=50) == pytest.approx(0.10, abs=1e-9)
+        # min_group_size=400 drops all (each 300 < 400) → 0 groups comparable
+        assert demographic_parity_gap(y_pred, groups, min_group_size=400) == 0.0

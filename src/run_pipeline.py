@@ -256,7 +256,12 @@ def run() -> int:
         "REGION_POPULATION_RELATIVE", "DAYS_REGISTRATION", "DAYS_ID_PUBLISH",
         "EXT_SOURCE_3", "EXT_SOURCE_1",
     ]
-    app_feature_cols = [c for c in dag_candidates if c in df.columns and c not in ("TARGET",)]
+    # Dedupe: EXT_SOURCE_1/3 already live in g.nodes, so the explicit
+    # list above makes them appear twice. dict.fromkeys preserves order
+    # and removes dupes.
+    app_feature_cols = list(dict.fromkeys(
+        c for c in dag_candidates if c in df.columns and c not in ("TARGET",)
+    ))
     # Cap at top-30 by missing-rate to keep the matrix tractable for LightGBM
     miss_rate = df[app_feature_cols].isnull().mean().sort_values()
     app_feature_cols = list(miss_rate.head(30).index)
@@ -264,7 +269,10 @@ def run() -> int:
     secondary_feature_cols = [c for c in df.columns if any(
         c.startswith(p) for p in ("BUREAU_", "PREV_", "POS_", "INST_", "CC_")
     )]
-    feature_cols = app_feature_cols + secondary_feature_cols
+    # Dedupe (EXT_SOURCE_1/3 and BUREAU_TYPE_MICROLOAN_FRAC appear in both
+    # dag_candidates and secondary features); duplicate columns would make
+    # df[col] return a DataFrame and break downstream vectorized ops.
+    feature_cols = list(dict.fromkeys(app_feature_cols + secondary_feature_cols))
     print(f"  app-table features:  {len(app_feature_cols)} (capped at 30 by missingness)")
     print(f"  secondary features:  {len(secondary_feature_cols)} (BUREAU/PREV/POS/INST/CC)")
     print(f"  total selected features: {len(feature_cols)}")
@@ -867,11 +875,13 @@ def run() -> int:
             np.asarray(y_pred)[:n_fair],
             np.asarray(y_prob)[:n_fair],
             groups,
+            min_group_size=100,  # drop groups <100 from between-group metrics
         )
         slice_summaries[name] = s
         print(f"    {name:<18s}  status={s.status:<7s}  "
               f"DP={s.dp_gap:.3f}  EO={s.eo_gap:.3f}  DI={s.di_ratio:.3f}  "
-              f"(n_groups={s.n_groups}, n={s.n_total})")
+              f"(n_groups={s.n_groups}, n={s.n_total}, "
+              f"filtered={s.groups_filtered})")
 
     # Render 3 fairness charts (15, 16, 17)
     fairness_chart_paths = render_all(slice_summaries, str(output_fig))

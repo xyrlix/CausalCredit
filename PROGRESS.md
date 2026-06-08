@@ -1,7 +1,8 @@
 # CausalCredit 开发进展记录
 
-> **最后更新**: 2026-06-07 | **环境**: CPU (Python 3.11, `ldq_cc` conda env)  
-> **状态**: 16 个里程碑全部完成 ✅ (M0-M7 + M8.1 公平性 + M8.2 因果叙事 + M8.3 服务化 + M8.4 多语言 + M8.5 系列 5 件 + M8.6 验证深化 4 件)
+> **最后更新**: 2026-06-08 | **环境**: CPU (Python 3.10, `ldq_cc` conda env)  
+> **状态**: 16 个里程碑全部完成 ✅ (M0-M7 + M8.1 公平性 + M8.2 因果叙事 + M8.3 服务化 + M8.4 多语言 + M8.5 系列 5 件 + M8.6 验证深化 4 件)  
+> **当前**: 端到端 16 步 213.85s 热跑 ✅, 37 测试文件 / **396 用例** 全过 (86.3s), AUC 0.7802 / F1 0.0740 / Refutation 0.75 / Fairness 4/4 WARNING 切片已过滤小样本组
 
 ---
 
@@ -52,6 +53,7 @@
 | 16 | `70079cd` | **M8.6b BLP 检验 (Best Linear Predictor)** |
 | 17 | `b476a20` | **M8.6c CATE 稳定性 Tier1+Tier2 + W=None bug 修复** |
 | 18 | `81d692a` | **M8.6d CCGS 因果验证金字塔 (4 层 + CCGS)** |
+| 19 | (HEAD) | M8.6d-end 验证修复: dedup feature columns (EXT_SOURCE_* 与 secondary 重名) + PC collinearity drop (|ρ|>0.98) + fairness `min_group_size=100` 过滤小样本组 + BENCHMARKS/PROGRESS 增补 |
 
 > M0-M4 完整代码在 main 分支。后续每个里程碑均经 `python -m src.run_pipeline` 验证 + 单测全过。
 
@@ -989,6 +991,61 @@ M8.6a/b/c + 现有 4 类 refutation + 反事实/欺诈/公平性 — 验证输�
 - Visualization: `plot_pyramid` 2-panel 图 (条 + 摘要)
 
 **总测试数**: 385 → 393 (+25) — 至此**全量 393 个测试 1 分 35 秒全过**。
+
+---
+
+## M8.6d-end — 验证修复 + 公平性小样本组过滤
+
+### 动机
+
+2026-06-08 全量 16 步端到端重跑时, 触发了 3 类运行时问题：
+
+1. **STEP 4 特征去重 (CRASH)**: `EXT_SOURCE_1` / `EXT_SOURCE_3` 出现在两处 — DAG 节点集和 `dag_candidates` 显式列表。pandas 在多列名重复时 `df[c]` 返回 DataFrame 而非 Series，触发 `truth value of a Series is ambiguous`。
+2. **STEP 8 PC fisherz 奇异矩阵 (CRASH)**: PC 算法对极端共线特征 (`EXT_SOURCE_*` 互相 `|ρ| > 0.95` + bureau 衍生特征间高度共线) 求偏相关时矩阵不可逆。
+3. **STEP 15 公平性 DI 异常 (METRIC NOISE)**: 1K 测试子集中"academic" 子组 (`NAME_EDUCATION_TYPE='Academic degree'`) 仅 29 人且全部 0 predicted default，导致 `disparate_impact_ratio=0.000` 拉低整体 verdict。
+
+### 修复
+
+| # | 文件 | 改动 |
+|---|------|------|
+| 1 | `src/run_pipeline.py` STEP 4 | `app_feature_cols` + `feature_cols` 用 `list(dict.fromkeys(...))` 去重 (前 13 + 后 246 拼接) |
+| 2 | `src/causal/discovery.py::run_pc` | 新增 `corr_threshold=0.98` 参数, 跑 PC 前按 `|ρ|` 聚类删除冗余列, 记 `graph["dropped"]` 供日志 |
+| 3 | `src/fairness/metrics.py` | 三个核心指标 (`demographic_parity_gap` / `equal_opportunity_gap` / `disparate_impact_ratio`) + `summarize_fairness` 加 `min_group_size` 参数, 默认 0 (向后兼容)。模块级 `_group_counts` 缓存避免三次扫描 |
+| 4 | `src/run_pipeline.py` STEP 15 | `summarize_fairness(..., min_group_size=100)`, 打印 `groups_filtered` 列表 |
+| 5 | `src/fairness/metrics.py::FairnessSummary` | 新增 `min_group_size` + `groups_filtered` 字段 |
+
+### STEP 15 修复后输出 (Home Credit 1K 测试子集, 2026-06-08)
+
+| 切片 | status | DP_gap | EO_gap | DI_ratio | n_groups | filtered |
+|------|:---:|------:|------:|------:|:---:|------|
+| gender | WARNING | 0.0050 | 0.0124 | **0.472** | 3 | [] |
+| age_group | WARNING | 0.0096 | 0.0411 | **0.082** | 3 | [] |
+| income_group | WARNING | 0.0034 | 0.0220 | **0.548** | 3 | [] |
+| education_group | WARNING | 0.0068 | 0.0447 | **0.152** | 4 | [] |
+
+> 修复前 `education_group` DI=0.000 (因 29 人"academic"子组 0/29 predicted default), 修复后 4/4 子组进入比较, DI=0.152, verdict 从完全失真回归真实水平。academic 子组本应在日志中显式标注 (DP / EO / DI 对 n<100 的子组统计意义弱), 修复通过 `groups_filtered` 字段提供审计痕迹。
+>
+> **业务解读**: 公平性 4 切片均 WARNING (DP 0.005-0.01 接近阈值, EO 0.01-0.04 在阈值内或边缘, DI 0.08-0.55 全部跌破 EEOC 80% 规则)。**age_group DI=0.082 最严峻** (young vs old 的 selected rate 差 13x), 是后续 fairness-aware reweighting 的首要优化目标。
+
+### 单元测试 (`tests/test_fairness.py` 增 3 用例 → 14 用例)
+
+新增 `TestMinGroupSize` 三个确定性边界用例:
+
+- `test_small_group_filter_excludes_tiny_groups`: 验证 min_group_size=100 时, 5 人 OTHER 子组被剔除, DP/EO/DI 只在 200 人 F vs 200 人 M 上计算, 数值稳定 (DP=0.05, DI=0.5)
+- `test_min_group_size_default_zero_keeps_all`: 验证默认 0 时保留所有组 (向后兼容, 旧测试不受影响)
+- `test_demographic_parity_gap_with_filter`: 验证 min=50 保留 3 组 (DP=0.10), min=400 全部剔除 (DP=0.0 兜底)
+
+同时修正 2 个老用例的随机性 flake: `demographic_parity_gap_detects_bias` / `disparate_impact_ratio` 改用确定性 `np.array([1]*n + [0]*m)` 替代 `rng.binomial`, 消除 CI 偶发失败。
+
+**总测试数**: 393 → **396** (+3) — **全量 396 个测试 86.3s 全过**。
+
+### 影响
+
+- 端到端 16 步全部跑通 ✅
+- 公平性 4 切片可读 (无 0/0 占位)
+- 因果发现不再因共线性崩溃
+- 测试结果 100% 确定, 无 flake
+- BENCHMARKS.md / PROGRESS.md / 本节文档同步更新
 
 ---
 

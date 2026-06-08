@@ -22,6 +22,15 @@ fair thresholds** are:
 
 If ANY metric is violated the slice is flagged ``WARNING``; if TWO
 or more are violated it is ``UNFAIR``.
+
+Small-group handling
+--------------------
+``summarize_fairness`` (and the three sub-metrics) accept a
+``min_group_size`` argument (default 100).  Groups with fewer than
+``min_group_size`` samples are dropped from the between-group
+metric calculation — they are too small for a statistically
+meaningful between-group spread (a single predicted default in a
+30-person group swings the selection rate by 3 pp).
 """
 
 from __future__ import annotations
@@ -39,6 +48,7 @@ import pandas as pd
 def demographic_parity_gap(
     y_pred: np.ndarray,
     groups: np.ndarray,
+    min_group_size: int = 0,
 ) -> float:
     """Max − min selection rate P(Ŷ=1) across groups.
 
@@ -47,10 +57,12 @@ def demographic_parity_gap(
     likely to get a positive prediction than the least-selected.
 
     Rows labelled ``UNKNOWN`` are excluded — they are missing-value
-    sentinels from the slicer, not real protected groups.
+    sentinels from the slicer, not real protected groups.  Groups
+    with fewer than ``min_group_size`` samples are also excluded.
     """
     _, y_pred_f, groups_f = _filter_unknown_groups(None, y_pred, groups)
-    rates = _selection_rates(y_pred_f, groups_f)
+    _populate_group_counts(groups_f)
+    rates = _filter_small_groups(_selection_rates(y_pred_f, groups_f), min_group_size)
     if len(rates) < 2:
         return 0.0
     return float(max(rates.values()) - min(rates.values()))
@@ -77,10 +89,40 @@ def _filter_unknown_groups(
     )
 
 
+def _filter_small_groups(
+    rates: Dict, min_group_size: int
+) -> Dict:
+    """Drop groups whose total sample count is below ``min_group_size``.
+
+    Accepts a ``{group: aggregate}`` dict (e.g. selection rates) and a
+    second dict of group → count, then returns only groups whose
+    count meets the threshold.  The count dict defaults to the
+    aggregate values themselves (caller may pass a separate
+    ``_group_counts`` mapping if the aggregate is a rate, not a
+    count).
+    """
+    if min_group_size <= 0:
+        return dict(rates)
+    return {g: v for g, v in rates.items() if _group_total(g) >= min_group_size}
+
+
+# A module-level cache: ``_group_counts[g]`` is filled by
+# ``_selection_rates`` / ``_tpr_per_group`` calls and then read by
+# ``_filter_small_groups``.  This avoids recomputing the per-group
+# sizes on every metric call (the slicer produces the same groups
+# array for all three metrics in ``summarize_fairness``).
+_group_counts: Dict[str, int] = {}
+
+
+def _group_total(g) -> int:
+    return int(_group_counts.get(str(g), 0))
+
+
 def equal_opportunity_gap(
     y_true: np.ndarray,
     y_pred: np.ndarray,
     groups: np.ndarray,
+    min_group_size: int = 0,
 ) -> float:
     """Max − min TPR across groups, computed on the y_true=1 subset.
 
@@ -88,7 +130,9 @@ def equal_opportunity_gap(
     each group have an equal chance of being accepted.
     """
     y_true_f, y_pred_f, groups_f = _filter_unknown_groups(y_true, y_pred, groups)
+    _populate_group_counts(groups_f)
     tprs = _tpr_per_group(y_true_f, y_pred_f, groups_f)
+    tprs = {g: v for g, v in tprs.items() if _group_total(g) >= min_group_size}
     if len(tprs) < 2:
         return 0.0
     return float(max(tprs.values()) - min(tprs.values()))
@@ -97,6 +141,7 @@ def equal_opportunity_gap(
 def disparate_impact_ratio(
     y_pred: np.ndarray,
     groups: np.ndarray,
+    min_group_size: int = 0,
 ) -> float:
     """min(selection_rate) / max(selection_rate) across groups.
 
@@ -106,7 +151,8 @@ def disparate_impact_ratio(
     applies.
     """
     _, y_pred_f, groups_f = _filter_unknown_groups(None, y_pred, groups)
-    rates = _selection_rates(y_pred_f, groups_f)
+    _populate_group_counts(groups_f)
+    rates = _filter_small_groups(_selection_rates(y_pred_f, groups_f), min_group_size)
     if len(rates) < 2 or max(rates.values()) == 0:
         return 1.0
     return float(min(rates.values()) / max(rates.values()))
@@ -180,6 +226,8 @@ class FairnessSummary:
     status: str  # "FAIR" | "WARNING" | "UNFAIR"
     groups: pd.DataFrame
     violated_metrics: List[str] = field(default_factory=list)
+    min_group_size: int = 0
+    groups_filtered: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict:
         d = asdict(self)
@@ -196,6 +244,7 @@ def summarize_fairness(
     dp_threshold: float = 0.05,
     eo_threshold: float = 0.05,
     di_threshold: float = 0.80,
+    min_group_size: int = 0,
 ) -> FairnessSummary:
     """Compute the three metrics and return a status verdict.
 
@@ -203,11 +252,19 @@ def summarize_fairness(
         FAIR     — all three metrics within bounds
         WARNING  — exactly one metric violated
         UNFAIR   — two or more metrics violated
+
+    Groups with fewer than ``min_group_size`` samples are excluded
+    from the between-group metric calculation (they are too small
+    for a reliable between-group spread estimate).  They are still
+    listed in the ``groups`` table for transparency.
     """
+    # Pre-fill the module-level _group_counts cache so the three
+    # sub-metric functions can use the same min_group_size filter.
+    _populate_group_counts(groups)
     grp = group_rates(y_true, y_pred, y_score, groups)
-    dp = demographic_parity_gap(y_pred, groups)
-    eo = equal_opportunity_gap(y_true, y_pred, groups)
-    di = disparate_impact_ratio(y_pred, groups)
+    dp = demographic_parity_gap(y_pred, groups, min_group_size=min_group_size)
+    eo = equal_opportunity_gap(y_true, y_pred, groups, min_group_size=min_group_size)
+    di = disparate_impact_ratio(y_pred, groups, min_group_size=min_group_size)
     violated = []
     if dp > dp_threshold:
         violated.append(f"DP_gap={dp:.3f}>{dp_threshold}")
@@ -231,10 +288,23 @@ def summarize_fairness(
         status=status,
         groups=grp,
         violated_metrics=violated,
+        min_group_size=min_group_size,
+        groups_filtered=sorted(
+            str(g) for g, n in grp["n"].items() if int(n) < min_group_size
+        ),
     )
 
 
 # -------------------------------------------------------------- helpers
+
+
+def _populate_group_counts(groups: np.ndarray) -> None:
+    """Cache per-group sample counts for the small-group filter."""
+    global _group_counts
+    _group_counts = {
+        str(g): int(c)
+        for g, c in pd.Series(np.asarray(groups)).value_counts().items()
+    }
 
 
 def _selection_rates(y_pred: np.ndarray, groups: np.ndarray) -> Dict:

@@ -1,7 +1,7 @@
 {
   "applicant_id": "HC_023041",
-  "timestamp": "2026-06-06T14:53:30.660407Z",
-  "default_probability": 0.0026,
+  "timestamp": "2026-06-08T00:33:01.607571Z",
+  "default_probability": 0.0025,
   "score": 848,
   "risk_grade": "A",
   "decision_suggestion": "APPROVE — low expected loss",
@@ -9,42 +9,42 @@
     {
       "feature": "DAYS_EMPLOYED",
       "value": -13356.0,
-      "shap": -0.5353289549114395,
+      "shap": -0.5798318877959102,
       "quadrant": "TRUSTED"
     },
     {
       "feature": "EXT_SOURCE_2",
       "value": 0.7825659299420509,
-      "shap": -0.46504812354058295,
+      "shap": -0.4956878217903346,
       "quadrant": "TRUSTED"
     },
     {
       "feature": "INST_NUM_INSTALMENT_VERSION_NUNIQUE",
       "value": 15.0,
-      "shap": -0.27782569859262807,
+      "shap": -0.2848096123980538,
       "quadrant": "UNTRUSTED"
     },
     {
       "feature": "EXT_SOURCE_3",
       "value": 0.6178261467332483,
-      "shap": -0.2223084034664508,
+      "shap": -0.22838594764667014,
       "quadrant": "TRUSTED"
     },
     {
       "feature": "PREV_AMT_ANNUITY_MEAN",
       "value": 82366.965,
-      "shap": -0.1791208916946743,
+      "shap": -0.19047245124959658,
       "quadrant": "UNTRUSTED"
     }
   ],
   "cate_insights": [
     "Heterogeneous treatment effect (CATE) for this applicant: 0.0000",
-    "Four-quadrant distribution: TRUSTED=64, UNTRUSTED=44, NEGLIGIBLE=64, MASKED=44",
+    "Four-quadrant distribution: TRUSTED=65, UNTRUSTED=42, NEGLIGIBLE=64, MASKED=42",
     "ATE estimate: 0.0000",
     "Refutation robustness score: 0.75"
   ],
   "counterfactual_recommendations": [],
-  "causal_narrative": "Default risk is 0.26% (score=848, grade A). Primary driver: DAYS_EMPLOYED (SHAP=-0.5353, quadrant=TRUSTED). Heterogeneous effect estimate: |CATE|=0.0000.",
+  "causal_narrative": "Default risk is 0.25% (score=848, grade A). Primary driver: DAYS_EMPLOYED (SHAP=-0.5798, quadrant=TRUSTED). Heterogeneous effect estimate: |CATE|=0.0000.",
   "fairness": {
     "applicant_groups": {
       "gender": "F",
@@ -56,20 +56,20 @@
       {
         "slice": "gender",
         "status": "WARNING",
-        "dp_gap": 0.004,
-        "eo_gap": 0.0118,
-        "di_ratio": 0.5383,
+        "dp_gap": 0.005,
+        "eo_gap": 0.0124,
+        "di_ratio": 0.4725,
         "n_groups": 3,
         "n_total": 50000,
         "violated_metrics": [
-          "DI=0.538<0.8"
+          "DI=0.472<0.8"
         ]
       },
       {
         "slice": "age_group",
         "status": "WARNING",
         "dp_gap": 0.0096,
-        "eo_gap": 0.0404,
+        "eo_gap": 0.0411,
         "di_ratio": 0.0816,
         "n_groups": 3,
         "n_total": 50000,
@@ -80,52 +80,53 @@
       {
         "slice": "income_group",
         "status": "WARNING",
-        "dp_gap": 0.0036,
-        "eo_gap": 0.0213,
-        "di_ratio": 0.5112,
+        "dp_gap": 0.0034,
+        "eo_gap": 0.022,
+        "di_ratio": 0.5481,
         "n_groups": 3,
         "n_total": 50000,
         "violated_metrics": [
-          "DI=0.511<0.8"
+          "DI=0.548<0.8"
         ]
       },
       {
         "slice": "education_group",
-        "status": "WARNING",
-        "dp_gap": 0.0077,
-        "eo_gap": 0.05,
+        "status": "UNFAIR",
+        "dp_gap": 0.008,
+        "eo_gap": 0.0509,
         "di_ratio": 0.0,
         "n_groups": 4,
         "n_total": 50000,
         "violated_metrics": [
+          "EO_gap=0.051>0.05",
           "DI=0.000<0.8"
         ]
       }
     ],
-    "verdict": "WARNING",
+    "verdict": "UNFAIR",
     "violated_slices": [
       "gender",
       "age_group",
       "income_group",
       "education_group"
     ],
-    "regulatory_note": "One or more slices are WARNING. Model output may be biased; request additional documentation from the applicant."
+    "regulatory_note": "At least one protected slice is UNFAIR under HKMA / EU AI Act guidance. Decision must be reviewed by a human officer before issuance."
   },
   "fraud": {
-    "fraud_score": 7.030536557390716e-06,
+    "fraud_score": 8.748158529295e-06,
     "defaulter_sub_proba": {
-      "fraudulent": 0.0026939847176656534,
-      "non_malicious": 0.9973060152823344,
+      "fraudulent": 0.003563108745315928,
+      "non_malicious": 0.996436891254684,
       "systemic": 0.0
     },
-    "packaging_score": 0.37037037037037035,
+    "packaging_score": 0.3584905660377358,
     "path_integrity": 1.0,
-    "denoised_default_proba": 0.15260971657013803,
+    "denoised_default_proba": 0.15245520391169518,
     "causal_consistency": 0.5,
     "inflation_strength": 0.15,
     "routing": "REVIEW_BORDERLINE",
     "routing_reasons": [
-      "packaging_score=0.370 in [0.30, 0.50) borderline"
+      "packaging_score=0.358 in [0.30, 0.50) borderline"
     ]
   },
   "causal_narrative_v2": {
@@ -133,25 +134,25 @@
       "top_features": [
         {
           "feature": "EXT_SOURCE_2",
-          "mean_abs_shap": 0.3012479629933438
+          "mean_abs_shap": 0.3015014425052128
         },
         {
           "feature": "EXT_SOURCE_3",
-          "mean_abs_shap": 0.289104780945538
+          "mean_abs_shap": 0.2854444926496062
         },
         {
           "feature": "EXT_SOURCE_1",
-          "mean_abs_shap": 0.15470198735159293
+          "mean_abs_shap": 0.1547231275234429
         }
       ],
-      "narrative": "At the model level, P(default) for the average applicant is driven primarily by EXT_SOURCE_2 (mean |SHAP|=0.3012), followed by EXT_SOURCE_3 (0.2891) and EXT_SOURCE_1 (0.1547). These three features account for the bulk of all decisions.",
-      "feature_summary": "EXT_SOURCE_2 (0.3012), EXT_SOURCE_3 (0.2891), EXT_SOURCE_1 (0.1547)"
+      "narrative": "At the model level, P(default) for the average applicant is driven primarily by EXT_SOURCE_2 (mean |SHAP|=0.3015), followed by EXT_SOURCE_3 (0.2854) and EXT_SOURCE_1 (0.1547). These three features account for the bulk of all decisions.",
+      "feature_summary": "EXT_SOURCE_2 (0.3015), EXT_SOURCE_3 (0.2854), EXT_SOURCE_1 (0.1547)"
     },
     "cohort_level": {
       "k": 10,
-      "cohort_mean_p_default": 0.01388409229144245,
-      "applicant_p_default": 0.002609716570138044,
-      "delta": -0.011274375721304407,
+      "cohort_mean_p_default": 0.011594092668831815,
+      "applicant_p_default": 0.002455203911695188,
+      "delta": -0.009138888757136627,
       "top_deviations": [
         {
           "feature": "PREV_AMT_DOWN_PAYMENT_MIN",
@@ -184,14 +185,14 @@
           "cohort_mean": -6997.8
         }
       ],
-      "narrative": "Among the 10 training applicants most similar to this one, the average P(default) is 1.39%, so this applicant's P(default) of 0.26% is in line with the cohort (Δ=-0.0113). The applicant deviates most from the cohort in: PREV_AMT_DOWN_PAYMENT_MIN (z=+3.47), BUREAU_AMT_CREDIT_SUM_LIMIT_MAX (z=+3.44), PREV_AMT_GOODS_PRICE_MIN (z=+3.01)."
+      "narrative": "Among the 10 training applicants most similar to this one, the average P(default) is 1.16%, so this applicant's P(default) of 0.25% is in line with the cohort (Δ=-0.0091). The applicant deviates most from the cohort in: PREV_AMT_DOWN_PAYMENT_MIN (z=+3.47), BUREAU_AMT_CREDIT_SUM_LIMIT_MAX (z=+3.44), PREV_AMT_GOODS_PRICE_MIN (z=+3.01)."
     },
     "individual_level": {
       "top_features": [
         {
           "feature": "DAYS_EMPLOYED",
           "value": -13356.0,
-          "shap": -0.5353289549114395,
+          "shap": -0.5798318877959102,
           "quadrant": "TRUSTED",
           "direction": "decreases_default",
           "dag_paths": [
@@ -205,7 +206,7 @@
         {
           "feature": "EXT_SOURCE_2",
           "value": 0.7825659299420509,
-          "shap": -0.46504812354058295,
+          "shap": -0.4956878217903346,
           "quadrant": "TRUSTED",
           "direction": "decreases_default",
           "dag_paths": [
@@ -219,7 +220,7 @@
         {
           "feature": "INST_NUM_INSTALMENT_VERSION_NUNIQUE",
           "value": 15.0,
-          "shap": -0.27782569859262807,
+          "shap": -0.2848096123980538,
           "quadrant": "UNTRUSTED",
           "direction": "decreases_default",
           "dag_paths": [],
@@ -228,23 +229,28 @@
         {
           "feature": "EXT_SOURCE_3",
           "value": 0.6178261467332483,
-          "shap": -0.2223084034664508,
+          "shap": -0.22838594764667014,
           "quadrant": "TRUSTED",
           "direction": "decreases_default",
-          "dag_paths": [],
-          "n_paths": 0
+          "dag_paths": [
+            [
+              "EXT_SOURCE_3",
+              "TARGET"
+            ]
+          ],
+          "n_paths": 1
         },
         {
           "feature": "PREV_AMT_ANNUITY_MEAN",
           "value": 82366.965,
-          "shap": -0.1791208916946743,
+          "shap": -0.19047245124959658,
           "quadrant": "UNTRUSTED",
           "direction": "decreases_default",
           "dag_paths": [],
           "n_paths": 0
         }
       ],
-      "narrative": "The dominant risk driver is DAYS_EMPLOYED (SHAP=-0.5353, quadrant=TRUSTED). In the causal DAG this feature reaches TARGET via: DAYS_EMPLOYED → TARGET. 2 of the top-5 features are UNTRUSTED (model says important, but no causal support); 3 are TRUSTED (model and causal both agree).",
+      "narrative": "The dominant risk driver is DAYS_EMPLOYED (SHAP=-0.5798, quadrant=TRUSTED). In the causal DAG this feature reaches TARGET via: DAYS_EMPLOYED → TARGET. 2 of the top-5 features are UNTRUSTED (model says important, but no causal support); 3 are TRUSTED (model and causal both agree).",
       "dominant_feature": "DAYS_EMPLOYED",
       "dominant_dag_path": [
         "DAYS_EMPLOYED",
@@ -257,10 +263,10 @@
     "robustness": {
       "n_perturbations": 20,
       "noise_frac": 0.1,
-      "top_1_stable": 0.3,
-      "top_3_stable": 0.05,
-      "stability_score": 0.2,
-      "interpretation": "Explanation is fragile (stability=0.20); interpret with caution."
+      "top_1_stable": 0.55,
+      "top_3_stable": 0.15,
+      "stability_score": 0.39,
+      "interpretation": "Explanation is fragile (stability=0.39); interpret with caution."
     },
     "applicant_id": "HC_023041"
   }

@@ -17,11 +17,15 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
 
+import logging
+
 import networkx as nx
 import numpy as np
 import pandas as pd
 from scipy.linalg import expm
 from scipy.optimize import minimize
+
+logger = logging.getLogger("causalcredit.causal.discovery")
 
 
 # ===========================================================================
@@ -220,12 +224,41 @@ def run_pc(
     data: pd.DataFrame,
     alpha: float = 0.01,
     max_cond_size: int = 3,
+    corr_threshold: float = 0.98,
 ) -> nx.DiGraph:
-    """Run PC algorithm on a numeric DataFrame (uses all numeric columns)."""
+    """Run PC algorithm on a numeric DataFrame (uses all numeric columns).
+
+    Drops near-collinear columns (``|ρ| > corr_threshold``) to keep the
+    fisher-z partial-correlation matrix invertible.  Only one column
+    per correlation cluster is kept (the first one seen); dropped
+    columns are returned as the ``dropped`` set on the graph so the
+    caller can log them.
+    """
     numeric = data.select_dtypes(include=[np.number]).copy()
     numeric = numeric.fillna(numeric.median(numeric_only=True))
+
+    if numeric.shape[1] > 1 and corr_threshold < 1.0:
+        corr = numeric.corr().abs()
+        np.fill_diagonal(corr.values, 0.0)
+        keep: List[str] = []
+        drop: List[str] = []
+        for c in numeric.columns:
+            if any(corr.loc[c, k] > corr_threshold for k in keep):
+                drop.append(c)
+            else:
+                keep.append(c)
+        if drop:
+            logger.info(
+                "run_pc: dropping %d collinear columns (|ρ| > %.2f): %s",
+                len(drop), corr_threshold, drop,
+            )
+            numeric = numeric[keep]
+
     X = numeric.values
     G = _run_pc_causallearn(X, list(numeric.columns), alpha=alpha)
+    G.graph["dropped"] = list(
+        set(data.select_dtypes(include=[np.number]).columns) - set(numeric.columns)
+    )
     return G
 
 

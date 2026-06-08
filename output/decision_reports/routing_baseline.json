@@ -1,11 +1,10 @@
 {
-  "_comment": "Persisted baseline routing distribution for PSI drift monitoring. Written by STEP 15 (FAIRNESS) on first run with current batch values; reused on all subsequent runs. Schema: routing category -> empirical probability (0-1, sums to 1.0 over the 5 categories). The 5-level routing is produced by FraudGuard and is the same one used in M7/M8.1.",
-  "M7_PROCEED_FRAC": 0.056,
-  "M7_REVIEW_BORDERLINE_FRAC": 0.906,
-  "M7_REJECT_FRAUD_FRAC": 0.029,
-  "M7_REJECT_PACKAGING_FRAC": 0.009,
+  "M7_PROCEED_FRAC": 0.088,
+  "M7_REVIEW_BORDERLINE_FRAC": 0.882,
   "M7_REVIEW_DENOISED_FRAC": 0.0,
-  "_source": "First persisted run of M8.1 (commit 8d96398). Update by deleting this file and re-running the pipeline.",
+  "M7_REJECT_FRAUD_FRAC": 0.027,
+  "M7_REJECT_PACKAGING_FRAC": 0.003,
+  "_source": "Updated by run_pipeline STEP 15 (FAIRNESS); rolling baseline.",
   "_categories_ordered": [
     "PROCEED",
     "REVIEW_BORDERLINE",

@@ -1,0 +1,329 @@
+{
+  "applicant_id": "HC_031972",
+  "timestamp": "2026-06-08T00:33:01.692022Z",
+  "default_probability": 0.0489,
+  "score": 810,
+  "risk_grade": "A",
+  "decision_suggestion": "APPROVE — low expected loss",
+  "top_risk_factors": [
+    {
+      "feature": "DAYS_EMPLOYED",
+      "value": -7712.0,
+      "shap": -0.27345367756152966,
+      "quadrant": "TRUSTED"
+    },
+    {
+      "feature": "AMT_GOODS_PRICE",
+      "value": 697500.0,
+      "shap": -0.21940656453726765,
+      "quadrant": "UNTRUSTED"
+    },
+    {
+      "feature": "CODE_GENDER",
+      "value": 2.0,
+      "shap": 0.20197308182734225,
+      "quadrant": "UNTRUSTED"
+    },
+    {
+      "feature": "NAME_FAMILY_STATUS",
+      "value": 1.0,
+      "shap": 0.11385186197307058,
+      "quadrant": "UNTRUSTED"
+    },
+    {
+      "feature": "EXT_SOURCE_2",
+      "value": 0.5881541123088154,
+      "shap": -0.11181943874130702,
+      "quadrant": "TRUSTED"
+    }
+  ],
+  "cate_insights": [
+    "Heterogeneous treatment effect (CATE) for this applicant: 0.0000",
+    "Four-quadrant distribution: TRUSTED=65, UNTRUSTED=42, NEGLIGIBLE=64, MASKED=42",
+    "ATE estimate: 0.0000",
+    "Refutation robustness score: 0.75"
+  ],
+  "counterfactual_recommendations": [],
+  "causal_narrative": "Default risk is 4.89% (score=810, grade A). Primary driver: DAYS_EMPLOYED (SHAP=-0.2735, quadrant=TRUSTED). Heterogeneous effect estimate: |CATE|=0.0000.",
+  "fairness": {
+    "applicant_groups": {
+      "gender": "M",
+      "age_group": "mid",
+      "income_group": "low",
+      "education_group": "secondary"
+    },
+    "slice_summaries": [
+      {
+        "slice": "gender",
+        "status": "WARNING",
+        "dp_gap": 0.005,
+        "eo_gap": 0.0124,
+        "di_ratio": 0.4725,
+        "n_groups": 3,
+        "n_total": 50000,
+        "violated_metrics": [
+          "DI=0.472<0.8"
+        ]
+      },
+      {
+        "slice": "age_group",
+        "status": "WARNING",
+        "dp_gap": 0.0096,
+        "eo_gap": 0.0411,
+        "di_ratio": 0.0816,
+        "n_groups": 3,
+        "n_total": 50000,
+        "violated_metrics": [
+          "DI=0.082<0.8"
+        ]
+      },
+      {
+        "slice": "income_group",
+        "status": "WARNING",
+        "dp_gap": 0.0034,
+        "eo_gap": 0.022,
+        "di_ratio": 0.5481,
+        "n_groups": 3,
+        "n_total": 50000,
+        "violated_metrics": [
+          "DI=0.548<0.8"
+        ]
+      },
+      {
+        "slice": "education_group",
+        "status": "UNFAIR",
+        "dp_gap": 0.008,
+        "eo_gap": 0.0509,
+        "di_ratio": 0.0,
+        "n_groups": 4,
+        "n_total": 50000,
+        "violated_metrics": [
+          "EO_gap=0.051>0.05",
+          "DI=0.000<0.8"
+        ]
+      }
+    ],
+    "verdict": "UNFAIR",
+    "violated_slices": [
+      "gender",
+      "age_group",
+      "income_group",
+      "education_group"
+    ],
+    "regulatory_note": "At least one protected slice is UNFAIR under HKMA / EU AI Act guidance. Decision must be reviewed by a human officer before issuance."
+  },
+  "fraud": {
+    "fraud_score": 4.991101589706004e-05,
+    "defaulter_sub_proba": {
+      "fraudulent": 0.0010213320943404105,
+      "non_malicious": 0.9989786679056596,
+      "systemic": 0.0
+    },
+    "packaging_score": 0.3018867924528302,
+    "path_integrity": 1.0,
+    "denoised_default_proba": 0.1988685474329417,
+    "causal_consistency": 0.5,
+    "inflation_strength": 0.15,
+    "routing": "REVIEW_BORDERLINE",
+    "routing_reasons": [
+      "packaging_score=0.302 in [0.30, 0.50) borderline"
+    ]
+  },
+  "causal_narrative_v2": {
+    "model_level": {
+      "top_features": [
+        {
+          "feature": "EXT_SOURCE_2",
+          "mean_abs_shap": 0.3015014425052128
+        },
+        {
+          "feature": "EXT_SOURCE_3",
+          "mean_abs_shap": 0.2854444926496062
+        },
+        {
+          "feature": "EXT_SOURCE_1",
+          "mean_abs_shap": 0.1547231275234429
+        }
+      ],
+      "narrative": "At the model level, P(default) for the average applicant is driven primarily by EXT_SOURCE_2 (mean |SHAP|=0.3015), followed by EXT_SOURCE_3 (0.2854) and EXT_SOURCE_1 (0.1547). These three features account for the bulk of all decisions.",
+      "feature_summary": "EXT_SOURCE_2 (0.3015), EXT_SOURCE_3 (0.2854), EXT_SOURCE_1 (0.1547)"
+    },
+    "cohort_level": {
+      "k": 10,
+      "cohort_mean_p_default": 0.04244467707018687,
+      "applicant_p_default": 0.0488685474329417,
+      "delta": 0.006423870362754831,
+      "top_deviations": [
+        {
+          "feature": "BUREAU_CNT_CREDIT_PROLONG_MEAN",
+          "z": 1.769,
+          "applicant": 0.125,
+          "cohort_mean": 0.014285714285714285
+        },
+        {
+          "feature": "NAME_FAMILY_STATUS",
+          "z": -0.878,
+          "applicant": 1.0,
+          "cohort_mean": 1.9
+        },
+        {
+          "feature": "BUREAU_DAYS_CREDIT_MAX",
+          "z": -0.849,
+          "applicant": -555.0,
+          "cohort_mean": -110.1
+        },
+        {
+          "feature": "DAYS_ID_PUBLISH",
+          "z": 0.84,
+          "applicant": -1963.0,
+          "cohort_mean": -3229.9
+        },
+        {
+          "feature": "DAYS_EMPLOYED",
+          "z": -0.815,
+          "applicant": -7712.0,
+          "cohort_mean": -5840.8
+        }
+      ],
+      "narrative": "Among the 10 training applicants most similar to this one, the average P(default) is 4.24%, so this applicant's P(default) of 4.89% is in line with the cohort (Δ=+0.0064). The applicant deviates most from the cohort in: BUREAU_CNT_CREDIT_PROLONG_MEAN (z=+1.77), NAME_FAMILY_STATUS (z=-0.88), BUREAU_DAYS_CREDIT_MAX (z=-0.85)."
+    },
+    "individual_level": {
+      "top_features": [
+        {
+          "feature": "DAYS_EMPLOYED",
+          "value": -7712.0,
+          "shap": -0.27345367756152966,
+          "quadrant": "TRUSTED",
+          "direction": "decreases_default",
+          "dag_paths": [
+            [
+              "DAYS_EMPLOYED",
+              "TARGET"
+            ]
+          ],
+          "n_paths": 1
+        },
+        {
+          "feature": "AMT_GOODS_PRICE",
+          "value": 697500.0,
+          "shap": -0.21940656453726765,
+          "quadrant": "UNTRUSTED",
+          "direction": "decreases_default",
+          "dag_paths": [
+            [
+              "AMT_GOODS_PRICE",
+              "TARGET"
+            ]
+          ],
+          "n_paths": 1
+        },
+        {
+          "feature": "CODE_GENDER",
+          "value": 2.0,
+          "shap": 0.20197308182734225,
+          "quadrant": "UNTRUSTED",
+          "direction": "increases_default",
+          "dag_paths": [
+            [
+              "CODE_GENDER",
+              "AMT_INCOME_TOTAL",
+              "TARGET"
+            ],
+            [
+              "CODE_GENDER",
+              "AMT_INCOME_TOTAL",
+              "DAYS_EMPLOYED",
+              "TARGET"
+            ],
+            [
+              "CODE_GENDER",
+              "AMT_INCOME_TOTAL",
+              "AMT_ANNUITY",
+              "TARGET"
+            ],
+            [
+              "CODE_GENDER",
+              "AMT_INCOME_TOTAL",
+              "AMT_CREDIT",
+              "TARGET"
+            ],
+            [
+              "CODE_GENDER",
+              "OCCUPATION_TYPE",
+              "TARGET"
+            ],
+            [
+              "CODE_GENDER",
+              "OCCUPATION_TYPE",
+              "DAYS_EMPLOYED",
+              "TARGET"
+            ],
+            [
+              "CODE_GENDER",
+              "OCCUPATION_TYPE",
+              "AMT_INCOME_TOTAL",
+              "TARGET"
+            ],
+            [
+              "CODE_GENDER",
+              "DAYS_EMPLOYED",
+              "TARGET"
+            ]
+          ],
+          "n_paths": 8
+        },
+        {
+          "feature": "NAME_FAMILY_STATUS",
+          "value": 1.0,
+          "shap": 0.11385186197307058,
+          "quadrant": "UNTRUSTED",
+          "direction": "increases_default",
+          "dag_paths": [
+            [
+              "NAME_FAMILY_STATUS",
+              "TARGET"
+            ],
+            [
+              "NAME_FAMILY_STATUS",
+              "NAME_HOUSING_TYPE",
+              "TARGET"
+            ]
+          ],
+          "n_paths": 2
+        },
+        {
+          "feature": "EXT_SOURCE_2",
+          "value": 0.5881541123088154,
+          "shap": -0.11181943874130702,
+          "quadrant": "TRUSTED",
+          "direction": "decreases_default",
+          "dag_paths": [
+            [
+              "EXT_SOURCE_2",
+              "TARGET"
+            ]
+          ],
+          "n_paths": 1
+        }
+      ],
+      "narrative": "The dominant risk driver is DAYS_EMPLOYED (SHAP=-0.2735, quadrant=TRUSTED). In the causal DAG this feature reaches TARGET via: DAYS_EMPLOYED → TARGET. 3 of the top-5 features are UNTRUSTED (model says important, but no causal support); 2 are TRUSTED (model and causal both agree).",
+      "dominant_feature": "DAYS_EMPLOYED",
+      "dominant_dag_path": [
+        "DAYS_EMPLOYED",
+        "TARGET"
+      ],
+      "n_trusted": 2,
+      "n_untrusted": 3,
+      "n_masked": 0
+    },
+    "robustness": {
+      "n_perturbations": 20,
+      "noise_frac": 0.1,
+      "top_1_stable": 0.15,
+      "top_3_stable": 0.1,
+      "stability_score": 0.13,
+      "interpretation": "Explanation is fragile (stability=0.13); interpret with caution."
+    },
+    "applicant_id": "HC_031972"
+  }
+}
