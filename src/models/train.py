@@ -103,8 +103,24 @@ class LightGBMTrainer:
         self.best_params_: Optional[Dict] = None
         self.study_: Optional["optuna.Study"] = None
 
-    def train_cv(self, X: pd.DataFrame, y: pd.Series, n_folds: int = 5) -> Dict[str, float]:
+    def train_cv(self, X: pd.DataFrame, y: pd.Series, n_folds: int = 5,
+                 subsample_frac: float = 1.0, subsample_seed: int = 42) -> Dict[str, float]:
+        """Run stratified K-fold cross-validation on (X, y).
+
+        Parameters
+        ----------
+        subsample_frac : float in (0, 1]
+            If < 1.0, take a stratified subsample of the rows before CV. Used
+            to keep the 3-fold CV wall-time down on full Home Credit (~215K rows).
+        """
         import lightgbm as lgb
+        if subsample_frac < 1.0:
+            from sklearn.model_selection import train_test_split
+            X_sub, _, y_sub, _ = train_test_split(
+                X, y, train_size=subsample_frac, random_state=subsample_seed,
+                stratify=y,
+            )
+            X, y = X_sub, y_sub
         model = lgb.LGBMClassifier(**self.params)
         cv = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=42)
         auc = cross_val_score(model, X, y, cv=cv, scoring="roc_auc")
@@ -115,10 +131,20 @@ class LightGBMTrainer:
             "cv_accuracy_mean": float(acc.mean()),
             "cv_accuracy_std": float(acc.std()),
             "n_folds": n_folds,
+            "subsample_frac": subsample_frac,
         }
 
-    def train_final(self, X: pd.DataFrame, y: pd.Series):
+    def train_final(self, X: pd.DataFrame, y: pd.Series,
+                    subsample_frac: float = 1.0, subsample_seed: int = 42):
+        """Fit on (X, y). If ``subsample_frac < 1.0``, take a stratified subsample first."""
         import lightgbm as lgb
+        if subsample_frac < 1.0:
+            from sklearn.model_selection import train_test_split
+            X_sub, _, y_sub, _ = train_test_split(
+                X, y, train_size=subsample_frac, random_state=subsample_seed,
+                stratify=y,
+            )
+            X, y = X_sub, y_sub
         self.model = lgb.LGBMClassifier(**self.params)
         self.model.fit(X, y)
         self.feature_importances_ = self.model.feature_importances_

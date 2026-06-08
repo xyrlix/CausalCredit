@@ -1,40 +1,40 @@
 {
-  "applicant_id": "HC_023041",
-  "timestamp": "2026-06-08T01:20:08.281606Z",
-  "default_probability": 0.0031,
-  "score": 847,
+  "applicant_id": "HC_066596",
+  "timestamp": "2026-06-08T01:20:08.382541Z",
+  "default_probability": 0.0498,
+  "score": 809,
   "risk_grade": "A",
   "decision_suggestion": "APPROVE — low expected loss",
   "top_risk_factors": [
     {
-      "feature": "EXT_SOURCE_2",
-      "value": 0.7825659299420509,
-      "shap": -0.5713689474426248,
-      "quadrant": "TRUSTED"
-    },
-    {
-      "feature": "INST_NUM_INSTALMENT_VERSION_NUNIQUE",
-      "value": 15.0,
-      "shap": -0.3824333508029056,
-      "quadrant": "UNTRUSTED"
-    },
-    {
-      "feature": "DAYS_EMPLOYED",
-      "value": -13356.0,
-      "shap": -0.3035492277313408,
+      "feature": "EXT_SOURCE_1",
+      "value": 0.8269309091002536,
+      "shap": -0.5755021957482743,
       "quadrant": "TRUSTED"
     },
     {
       "feature": "EXT_SOURCE_3",
-      "value": 0.6178261467332483,
-      "shap": -0.26287098143461574,
+      "value": 0.326475210066026,
+      "shap": 0.3910100349182701,
       "quadrant": "TRUSTED"
     },
     {
-      "feature": "BUREAU_AMT_CREDIT_SUM_LIMIT_MEAN",
-      "value": 72567.0,
-      "shap": -0.17323233046326814,
+      "feature": "POS_CNT_INSTALMENT_FUTURE_MEAN",
+      "value": 18.714285714285715,
+      "shap": 0.26722808183864405,
+      "quadrant": "TRUSTED"
+    },
+    {
+      "feature": "AMT_CREDIT",
+      "value": 107820.0,
+      "shap": -0.18500304828613562,
       "quadrant": "UNTRUSTED"
+    },
+    {
+      "feature": "INST_LATE_DAYS_GT0_FRAC",
+      "value": 0.3,
+      "shap": 0.17140286161065044,
+      "quadrant": "TRUSTED"
     }
   ],
   "cate_insights": [
@@ -44,13 +44,13 @@
     "Refutation robustness score: 0.75"
   ],
   "counterfactual_recommendations": [],
-  "causal_narrative": "Default risk is 0.31% (score=847, grade A). Primary driver: EXT_SOURCE_2 (SHAP=-0.5714, quadrant=TRUSTED). Heterogeneous effect estimate: |CATE|=0.0000.",
+  "causal_narrative": "Default risk is 4.98% (score=809, grade A). Primary driver: EXT_SOURCE_1 (SHAP=-0.5755, quadrant=TRUSTED). Heterogeneous effect estimate: |CATE|=0.0000.",
   "fairness": {
     "applicant_groups": {
-      "gender": "F",
+      "gender": "UNKNOWN",
       "age_group": "mid",
       "income_group": "low",
-      "education_group": "secondary"
+      "education_group": "other"
     },
     "slice_summaries": [
       {
@@ -112,20 +112,20 @@
     "regulatory_note": "One or more slices are WARNING. Model output may be biased; request additional documentation from the applicant."
   },
   "fraud": {
-    "fraud_score": 0.000822147727749001,
+    "fraud_score": 0.0011450807125285255,
     "defaulter_sub_proba": {
-      "fraudulent": 0.26345605673182343,
-      "non_malicious": 0.7365439432681766,
+      "fraudulent": 0.022980789935247194,
+      "non_malicious": 0.9770192100647527,
       "systemic": 0.0
     },
-    "packaging_score": 0.4528301886792453,
+    "packaging_score": 0.39622641509433965,
     "path_integrity": 1.0,
-    "denoised_default_proba": 0.1531206256479648,
+    "denoised_default_proba": 0.19982773506720225,
     "causal_consistency": 0.5,
     "inflation_strength": 0.15,
     "routing": "REVIEW_BORDERLINE",
     "routing_reasons": [
-      "packaging_score=0.453 in [0.30, 0.50) borderline"
+      "packaging_score=0.396 in [0.30, 0.50) borderline"
     ]
   },
   "causal_narrative_v2": {
@@ -149,77 +149,54 @@
     },
     "cohort_level": {
       "k": 10,
-      "cohort_mean_p_default": 0.015677337740696448,
-      "applicant_p_default": 0.003120625647964813,
-      "delta": -0.012556712092731636,
+      "cohort_mean_p_default": 0.07047055634176662,
+      "applicant_p_default": 0.04982773506720226,
+      "delta": -0.020642821274564356,
       "top_deviations": [
         {
-          "feature": "PREV_AMT_DOWN_PAYMENT_MIN",
-          "z": 3.47,
-          "applicant": 79438.5,
-          "cohort_mean": 18364.95
+          "feature": "CNT_CHILDREN",
+          "z": 2.221,
+          "applicant": 2.0,
+          "cohort_mean": 0.4
         },
         {
-          "feature": "BUREAU_AMT_CREDIT_SUM_LIMIT_MAX",
-          "z": 3.436,
-          "applicant": 290268.0,
-          "cohort_mean": 18369.477
+          "feature": "BUREAU_TYPE_CREDIT_CARD_FRAC",
+          "z": 1.728,
+          "applicant": 0.6,
+          "cohort_mean": 0.1648088023088023
         },
         {
-          "feature": "PREV_AMT_GOODS_PRICE_MIN",
-          "z": 3.009,
-          "applicant": 529578.0,
-          "cohort_mean": 205376.85
+          "feature": "INST_LATE_DAYS_GT0_FRAC",
+          "z": 1.511,
+          "applicant": 0.3,
+          "cohort_mean": 0.12674631519274376
         },
         {
-          "feature": "BUREAU_AMT_CREDIT_SUM_LIMIT_SUM",
-          "z": 2.86,
-          "applicant": 290268.0,
-          "cohort_mean": 18846.400499999996
+          "feature": "EXT_SOURCE_1",
+          "z": 1.331,
+          "applicant": 0.8269309091002536,
+          "cohort_mean": 0.4475635222571833
         },
         {
-          "feature": "DAYS_EMPLOYED",
-          "z": -2.771,
-          "applicant": -13356.0,
-          "cohort_mean": -6997.8
+          "feature": "BUREAU_TYPE_CONSUMER_CREDIT_FRAC",
+          "z": -1.215,
+          "applicant": 0.4,
+          "cohort_mean": 0.8351911976911979
         }
       ],
-      "narrative": "Among the 10 training applicants most similar to this one, the average P(default) is 1.57%, so this applicant's P(default) of 0.31% is in line with the cohort (Δ=-0.0126). The applicant deviates most from the cohort in: PREV_AMT_DOWN_PAYMENT_MIN (z=+3.47), BUREAU_AMT_CREDIT_SUM_LIMIT_MAX (z=+3.44), PREV_AMT_GOODS_PRICE_MIN (z=+3.01)."
+      "narrative": "Among the 10 training applicants most similar to this one, the average P(default) is 7.05%, so this applicant's P(default) of 4.98% is noticeably lower than the cohort (Δ=-0.0206). The applicant deviates most from the cohort in: CNT_CHILDREN (z=+2.22), BUREAU_TYPE_CREDIT_CARD_FRAC (z=+1.73), INST_LATE_DAYS_GT0_FRAC (z=+1.51)."
     },
     "individual_level": {
       "top_features": [
         {
-          "feature": "EXT_SOURCE_2",
-          "value": 0.7825659299420509,
-          "shap": -0.5713689474426248,
+          "feature": "EXT_SOURCE_1",
+          "value": 0.8269309091002536,
+          "shap": -0.5755021957482743,
           "quadrant": "TRUSTED",
           "direction": "decreases_default",
           "dag_paths": [
             [
-              "EXT_SOURCE_2",
-              "TARGET"
-            ]
-          ],
-          "n_paths": 1
-        },
-        {
-          "feature": "INST_NUM_INSTALMENT_VERSION_NUNIQUE",
-          "value": 15.0,
-          "shap": -0.3824333508029056,
-          "quadrant": "UNTRUSTED",
-          "direction": "decreases_default",
-          "dag_paths": [],
-          "n_paths": 0
-        },
-        {
-          "feature": "DAYS_EMPLOYED",
-          "value": -13356.0,
-          "shap": -0.3035492277313408,
-          "quadrant": "TRUSTED",
-          "direction": "decreases_default",
-          "dag_paths": [
-            [
-              "DAYS_EMPLOYED",
+              "EXT_SOURCE_1",
               "TARGET"
             ]
           ],
@@ -227,10 +204,10 @@
         },
         {
           "feature": "EXT_SOURCE_3",
-          "value": 0.6178261467332483,
-          "shap": -0.26287098143461574,
+          "value": 0.326475210066026,
+          "shap": 0.3910100349182701,
           "quadrant": "TRUSTED",
-          "direction": "decreases_default",
+          "direction": "increases_default",
           "dag_paths": [
             [
               "EXT_SOURCE_3",
@@ -240,33 +217,61 @@
           "n_paths": 1
         },
         {
-          "feature": "BUREAU_AMT_CREDIT_SUM_LIMIT_MEAN",
-          "value": 72567.0,
-          "shap": -0.17323233046326814,
+          "feature": "POS_CNT_INSTALMENT_FUTURE_MEAN",
+          "value": 18.714285714285715,
+          "shap": 0.26722808183864405,
+          "quadrant": "TRUSTED",
+          "direction": "increases_default",
+          "dag_paths": [],
+          "n_paths": 0
+        },
+        {
+          "feature": "AMT_CREDIT",
+          "value": 107820.0,
+          "shap": -0.18500304828613562,
           "quadrant": "UNTRUSTED",
           "direction": "decreases_default",
+          "dag_paths": [
+            [
+              "AMT_CREDIT",
+              "TARGET"
+            ],
+            [
+              "AMT_CREDIT",
+              "AMT_GOODS_PRICE",
+              "TARGET"
+            ]
+          ],
+          "n_paths": 2
+        },
+        {
+          "feature": "INST_LATE_DAYS_GT0_FRAC",
+          "value": 0.3,
+          "shap": 0.17140286161065044,
+          "quadrant": "TRUSTED",
+          "direction": "increases_default",
           "dag_paths": [],
           "n_paths": 0
         }
       ],
-      "narrative": "The dominant risk driver is EXT_SOURCE_2 (SHAP=-0.5714, quadrant=TRUSTED). In the causal DAG this feature reaches TARGET via: EXT_SOURCE_2 → TARGET. 2 of the top-5 features are UNTRUSTED (model says important, but no causal support); 3 are TRUSTED (model and causal both agree).",
-      "dominant_feature": "EXT_SOURCE_2",
+      "narrative": "The dominant risk driver is EXT_SOURCE_1 (SHAP=-0.5755, quadrant=TRUSTED). In the causal DAG this feature reaches TARGET via: EXT_SOURCE_1 → TARGET. 1 of the top-5 features are UNTRUSTED (model says important, but no causal support); 4 are TRUSTED (model and causal both agree).",
+      "dominant_feature": "EXT_SOURCE_1",
       "dominant_dag_path": [
-        "EXT_SOURCE_2",
+        "EXT_SOURCE_1",
         "TARGET"
       ],
-      "n_trusted": 3,
-      "n_untrusted": 2,
+      "n_trusted": 4,
+      "n_untrusted": 1,
       "n_masked": 0
     },
     "robustness": {
       "n_perturbations": 20,
       "noise_frac": 0.1,
-      "top_1_stable": 0.75,
-      "top_3_stable": 0.45,
-      "stability_score": 0.63,
-      "interpretation": "Explanation is moderately robust (stability=0.63); top drivers may shift under small input noise."
+      "top_1_stable": 0.65,
+      "top_3_stable": 0.0,
+      "stability_score": 0.39,
+      "interpretation": "Explanation is fragile (stability=0.39); interpret with caution."
     },
-    "applicant_id": "HC_023041"
+    "applicant_id": "HC_066596"
   }
 }

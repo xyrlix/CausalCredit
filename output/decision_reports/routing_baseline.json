@@ -1,9 +1,9 @@
 {
-  "M7_PROCEED_FRAC": 0.088,
-  "M7_REVIEW_BORDERLINE_FRAC": 0.882,
+  "M7_PROCEED_FRAC": 0.004,
+  "M7_REVIEW_BORDERLINE_FRAC": 0.918,
   "M7_REVIEW_DENOISED_FRAC": 0.0,
-  "M7_REJECT_FRAUD_FRAC": 0.027,
-  "M7_REJECT_PACKAGING_FRAC": 0.003,
+  "M7_REJECT_FRAUD_FRAC": 0.032,
+  "M7_REJECT_PACKAGING_FRAC": 0.046,
   "_source": "Updated by run_pipeline STEP 15 (FAIRNESS); rolling baseline.",
   "_categories_ordered": [
     "PROCEED",

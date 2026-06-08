@@ -61,17 +61,26 @@ def _is_binary_treatment(T: np.ndarray, tol_unique_frac: float = 0.05) -> bool:
     return n_unique <= max(10, int(tol_unique_frac * n))
 
 
-def _make_first_stage_models(discrete_treatment: bool):
-    """Pick sensible first-stage sklearn models given treatment type."""
+def _make_first_stage_models(discrete_treatment: bool, n_estimators: int = 100):
+    """Pick sensible first-stage sklearn models given treatment type.
+
+    Parameters
+    ----------
+    n_estimators : int
+        Number of trees in the gradient-boosted first stage. Reduced from
+        200 → 100 (DML/DML forests cross-fit; 2 fits × 2 models = 4 GBMs total
+        per LinearDML call). Empirically, downstream CATE stability is
+        insensitive above 100 trees.
+    """
     if discrete_treatment:
         model_t = LogisticRegressionCV(cv=3, max_iter=2000, random_state=0)
         model_y = GradientBoostingRegressor(
-            n_estimators=200, max_depth=4, learning_rate=0.05, random_state=0
+            n_estimators=n_estimators, max_depth=4, learning_rate=0.05, random_state=0
         )
     else:
         model_t = LassoCV(cv=3, random_state=0, max_iter=5000)
         model_y = GradientBoostingRegressor(
-            n_estimators=200, max_depth=4, learning_rate=0.05, random_state=0
+            n_estimators=n_estimators, max_depth=4, learning_rate=0.05, random_state=0
         )
     return model_y, model_t
 

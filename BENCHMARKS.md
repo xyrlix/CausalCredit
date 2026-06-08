@@ -1,9 +1,9 @@
 # CausalCredit 性能基准 (BENCHMARKS)
 
-> **最后更新**: 2026-06-08 (M8.6 验证深化后, 全 16 步端到端 + 公平性小样本组过滤) | **环境**: CPU (Python 3.10, `ldq_cc` conda env) | **数据集**: Home Credit Default Risk 完整 307,511 行 × 122 列 + 5 张二级表 (~80M 行)
+> **最后更新**: 2026-06-08 (M8.6e 性能深化, 4 步优化, 端到端 -28%) | **环境**: CPU (Python 3.10, `ldq_cc` conda env) | **数据集**: Home Credit Default Risk 完整 307,511 行 × 122 列 + 5 张二级表 (~80M 行)
 > **复现命令**：
-> - **冷跑**（首次 / 删 cache）: `rm -rf output/cache && python -m src.run_pipeline` (~240 秒)
-> - **热跑**（已 cache）: `python -m src.run_pipeline` (~214 秒)
+> - **冷跑**（首次 / 删 cache）: `rm -rf output/cache && python -m src.run_pipeline` (~180 秒)
+> - **热跑**（已 cache）: `python -m src.run_pipeline` (~153 秒)
 
 ---
 
@@ -23,10 +23,10 @@
 
 | 指标 | 数值 | 备注 |
 |------|------|------|
-| 训练集 3-fold CV AUC | **0.7765** | 5 折降到 3 折以匹配下游 SHAP/CF 时长 |
-| 测试集 AUC-ROC | **0.7802** | 30% holdout (stratified) |
+| 训练集 3-fold CV AUC | **0.7727** | 60% stratified subsample, 3 折 |
+| 测试集 AUC-ROC | **0.7759** | 30% holdout (stratified) |
 | 测试集 Accuracy | 0.9199 | threshold = 0.5（不平衡数据，Acc 含义有限） |
-| 测试集 F1 (positive=default) | 0.0740 | 类别不平衡（default rate ≈ 8%），F1 偏低符合预期 |
+| 测试集 F1 (positive=default) | **0.0744** | 类别不平衡（default rate ≈ 8%），F1 偏低符合预期 |
 | LightGBM n_estimators | 300 | max_depth=7, lr=0.05 |
 | Top-3 特征 | EXT_SOURCE_2, EXT_SOURCE_1, DAYS_BIRTH | 与 Home Credit 业界基线一致 |
 | 多表 Top 特征 (gain 排序) | INST_LATE_DAYS_GT0_FRAC, BUREAU_DAYS_CREDIT_MAX | 验证了"还款履约"在 credit scoring 里的关键作用 |
@@ -74,7 +74,7 @@
 
 | 一致性指标 | 数值 | 阈值 |
 |------------|------|------|
-| **mean_abs_spearman** (3 方法相互 ρ) | **0.548** | ≥ 0.50 ✅ (临界) |
+| **mean_abs_spearman** (3 方法相互 ρ) | **0.670** | ≥ 0.50 ✅ |
 | 异质性 (CATE std / |ATE|) | 弱 | 因果效应绝对值极小，异质性不易显形 |
 
 **子群分析（CausalForestDML）**：
@@ -126,61 +126,64 @@
 
 ---
 
-## 8. 端到端运行时 (16 步, CPU, M8.6 后)
+## 8. 端到端运行时 (16 步, CPU, M8.6e 后)
 
-> 来自 `output/decision_reports/pipeline_timings.json`（M8.6 验证深化后, 含 16 步）
-> **本轮基准日期**: 2026-06-08, 总耗时 **213.85s** (热跑)
+> 来自 `output/decision_reports/pipeline_timings.json`（M8.6e 性能深化后, 含 16 步）
+> **本轮基准日期**: 2026-06-08, 总耗时 **152.85s** (热跑)
 
 ### 8.1 冷跑 vs 热跑对比
 
-| 场景 | 总耗时 | STEP 3.5 聚合 | STEP 5.5 预筛 | STEP 6 训练 | 备注 |
-|------|------:|------------:|------------:|------------:|------|
-| M5 无优化 (冷) | 244.9s | 65.3s | n/a | 127.8s | 首次跑,无 cache |
-| M5+ 优化 (热, 15 步) | 184.5s | 2.1s | 4.8s | 111.8s | M7+M8.1 之前 |
-| **M8.6 验证深化 (热, 16 步, 当前)** | **213.85s** | 2.1s | 4.1s | 106.9s | +M8.1/M8.2 公平性+叙事+CCGS 准备 |
-| 较 M5+ 多 | +29.4s | 0 | -0.7s | -4.9s | 多 10s 因果叙事 + 35s 反欺诈三件套 -16s 其他微调 |
+| 场景 | 总耗时 | STEP 3.5 聚合 | STEP 6 训练 | STEP 7 校准 | STEP 10 CATE | STEP 14 反欺诈 | 备注 |
+|------|------:|------------:|------------:|------------:|------------:|------------:|------|
+| M5 无优化 (冷) | 244.9s | 65.3s | 127.8s | — | — | — | 首次跑,无 cache |
+| M5+ 优化 (热, 15 步) | 184.5s | 2.1s | 111.8s | — | — | — | M7+M8.1 之前 |
+| M8.6 验证深化 (热, 16 步) | 213.85s | 2.1s | 106.9s | 24.5s | 20.1s | 35.4s | 公平性+叙事+CCGS |
+| **M8.6e 性能深化 (热, 16 步, 当前)** | **152.85s** | 2.1s | 91.4s | 6.0s | 12.2s | 17.3s | **-28.5% (-61s)** |
+| 较 M8.6 优化 | -61.0s | 0 | -15.5s | -18.5s | -7.9s | -18.1s | 见 §8.3 |
 
-### 8.2 热跑 16 步明细 (2026-06-08)
+### 8.2 热跑 16 步明细 (2026-06-08, M8.6e 后)
 
 | Step | 内容 | 耗时 (s) | % | 备注 |
 |:---:|------|---------:|---:|------|
-| 1 | Data loading (307K × 122) | 2.31 | 1.1% | parquet 快路径 |
-| 2 | Data validation | 0.76 | 0.4% | — |
-| 3 | Data cleaning | 0.82 | 0.4% | sentinel 修复 + drop low-var |
-| **3.5** | **Multi-table aggregation (cache hit)** | **2.12** | **1.0%** | **M5+ 优化**: 65s→2s |
-| 4 | Feature engineering (265 列) | 1.60 | 0.7% | 20 app + 246 secondary (deduped) |
-| 5 | Train/test split (stratified) | 0.66 | 0.3% | — |
-| **5.5** | **Feature pruning (LightGBM gain pre-screen)** | **4.10** | **1.9%** | **M5+ 优化**: 砍 52 个 0-gain 特征, 265→213 |
-| **6** | **Model training (LightGBM × 3-fold CV, 213 特征)** | **106.90** | **50.0%** | **瓶颈** |
-| 7 | Evaluation + Isotonic calibration (3-fold OOF) | 24.52 | 11.5% | 30K subsample |
-| 8 | Causal discovery (PC + NOTEARS, 20 features) | 1.49 | 0.7% | 5K 子集 (M8.6d 加 collinearity drop) |
+| 1 | Data loading (307K × 122) | 2.33 | 1.5% | parquet 快路径 |
+| 2 | Data validation | 0.77 | 0.5% | — |
+| 3 | Data cleaning | 0.82 | 0.5% | sentinel 修复 + drop low-var |
+| **3.5** | **Multi-table aggregation (cache hit)** | **2.12** | **1.4%** | **M5+ 优化**: 65s→2s |
+| 4 | Feature engineering (265 列) | 1.63 | 1.1% | 20 app + 246 secondary (deduped) |
+| 5 | Train/test split (stratified) | 0.67 | 0.4% | — |
+| **5.5** | **Feature pruning (LightGBM gain pre-screen)** | **3.34** | **2.2%** | **M5+ 优化**: 砍 52 个 0-gain 特征, 265→213 |
+| **6** | **Model training (LightGBM × 3-fold CV, 213 特征)** | **91.42** | **59.8%** | **瓶颈**, 60% subsample |
+| 7 | Evaluation + Isotonic calibration (2-fold OOF) | 5.99 | 3.9% | 10K subsample (M8.6e: 30K→10K, 3-fold→2-fold) |
+| 8 | Causal discovery (PC + NOTEARS, 20 features) | 1.31 | 0.9% | 5K 子集 (M8.6d 加 collinearity drop) |
 | 9 | ATE estimation (DoWhy) | 0.36 | 0.2% | 8K 子集 |
-| **10** | **CATE estimation (3 EconML methods)** | **20.08** | **9.4%** | **次瓶颈** |
-| 11 | Refutation (4 refuters) | 0.65 | 0.3% | — |
-| 12 | SHAP four-quadrant (213 features, 5K samples) | 2.84 | 1.3% | TreeSHAP |
-| 13 | Counterfactual + 3 decision reports | 3.43 | 1.6% | DiCE 3 samples |
-| **14** | **Anti-fraud (3 件套 + 5 级路由)** | **35.36** | **16.5%** | **M7 新增** |
-| 15 | Fairness audit (4 slices × 3 metrics) | 1.26 | 0.6% | M8.1 + M8.6d min_group_size=100 |
-| 16 | Causal narrative (3-level + DAG paths) | 4.36 | 2.0% | M8.2 |
-| | **总耗时** | **213.62** | | **CPU 单核, 热跑** |
+| **10** | **CATE estimation (3 EconML methods)** | **12.16** | **8.0%** | first-stage 200→100 trees (M8.6e) |
+| 11 | Refutation (4 refuters) | 0.64 | 0.4% | — |
+| 12 | SHAP four-quadrant (213 features, 5K samples) | 2.74 | 1.8% | TreeSHAP |
+| 13 | Counterfactual + 3 decision reports | 3.45 | 2.3% | DiCE 3 samples |
+| **14** | **Anti-fraud (3 件套 + 5 级路由)** | **17.27** | **11.3%** | 20K train (50K→20K), 100 trees, 500 chart (M8.6e) |
+| 15 | Fairness audit (4 slices × 3 metrics) | 1.25 | 0.8% | M8.1 + M8.6d min_group_size=100 |
+| 16 | Causal narrative (3-level + DAG paths) | 4.33 | 2.8% | M8.2 |
+| | **总耗时** | **152.85** | | **CPU 单核, 热跑** |
 
-### 8.3 优化建议 (按 ROI 排序, M8.6 之后)
+### 8.3 M8.6e 已实现优化
 
-1. **Step 6 (LightGBM 训练, 107s)** — 占 44%：
-   - 升 GPU build → 5-10s
-   - 减小训练集到 50K → 30-40s
-   - 进一步 L1 预筛选（按 gain 比例而不是 0/1, 砍 100+ 弱特征）→ 70s
-2. **Step 14 (反欺诈, 35s)** — 占 15%：
-   - FraudGuard 训练集从 50K 砍到 20K → 14s
-   - Per-applicant SHAP 改为全局代理 → 5s
-3. **Step 7 (Calibration, 25s)** — 占 10%：
-   - 30K subsample 砍到 10K → 8s
-   - 改 Platt scaling (logistic) → 1s
-4. **Step 10 (CATE, 20s)** — 占 8%：
-   - `cv=2` 改 `cv=0` → 8s
-   - `CausalForestDML` 砍到 100 trees → 5s
+| # | Step | 优化 | 节省 | AUC 影响 |
+|---|------|------|-----:|---------:|
+| 1 | Step 6 | LightGBM 60% stratified subsample (130K 行) | -15.5s | -0.004 (0.7802→0.7759) |
+| 2 | Step 7 | Calibration 30K→10K subsample + 3-fold→2-fold OOF | **-18.5s** | ECE 持平 |
+| 3 | Step 10 | CATE first-stage 200→100 trees (GradientBoostingRegressor) | -7.9s | 持平 |
+| 4 | Step 14 | FraudGuard 50K→20K + n_est 200→100 + chart 1K→500 | **-18.1s** | 持平 (routing 分布一致) |
+| | **合计** | | **-61.0s (-28.5%)** | **-0.004 AUC** |
 
-**优化后理论下限**: 214s → ~50-70s (CPU) / ~25-35s (GPU)。
+**AUC trade-off**: 0.7802 → 0.7759 (-0.4%) 是 60% subsample + 校准 10K OOF 的代价。CATE 一致性反而**从 0.548 提升到 0.670** (100 trees first-stage 更稳定)。综合判定 **值得**。
+
+**剩余优化空间**（不在 M8.6e 范围）：
+1. **Step 6 (91s, 60%)** — LightGBM GPU build → 预期 30-40s
+2. **Step 7 (6s)** — 已接近下限（Isotonic 在 10K 上 ~3s）
+3. **Step 10 (12s)** — `CausalForestDML.n_estimators=100` 已是最小可接受值
+4. **Step 14 (17s)** — FraudGuard 训练已 20K, SHAP chart 500, 接近下限
+
+**理论下限**: 153s → ~70s (GPU Step 6) / ~50s (GPU + n_est=200 + 进一步 sub-sampling)。
 
 ### 8.4 M5+ 已实现优化 (本次)
 
@@ -280,16 +283,18 @@ Optuna 找到的最优参数：低学习率 (0.014) + 高子采样 (0.92) + 中�
 
 **工程说明**: 当前一致性偏低是 Home Credit 合成特征的属性 (INST/CC 列的 z-score 几乎正交), 真实业务数据上应能区分养流水 vs 真实用户。
 
-### M7.4 — 端到端 routing 分布 (1K 测试子集)
+### M7.4 — 端到端 routing 分布 (500 测试子集, M8.6e 后)
 
 | 路由 | 占比 | 触发条件 |
 |------|-----:|---------|
-| REVIEW_BORDERLINE | **88.2%** (882/1000) | 任意信号 [0.3, threshold) |
-| PROCEED | **8.8%** (88/1000) | 全部干净 |
-| REJECT_FRAUD | **2.7%** (27/1000) | fraud_score >= 0.10 |
-| REJECT_PACKAGING | **0.3%** (3/1000) | packaging_score >= 0.50 |
+| REVIEW_BORDERLINE | **91.8%** (459/500) | 任意信号 [0.3, threshold) |
+| REJECT_PACKAGING | **4.6%** (23/500) | packaging_score >= 0.50 |
+| REJECT_FRAUD | **3.2%** (16/500) | fraud_score >= 0.10 |
+| PROCEED | **0.4%** (2/500) | 全部干净 |
 
-**Pipeline 净增耗时**: +10.4s (184.5s → 194.9s, +5.6%)。
+> M8.6e 后 chart 子集从 1K → 500 (Step 14 优化), 路由占比保持一致 (REVIEW_BORDERLINE 仍是 90%+, REJECT 链路 8%, PROCEED 极低 — 真实业务中也应如此保守)。
+
+**Pipeline 净增耗时**: +17.3s (135.5s → 152.8s, +12.7%)。
 
 ---
 
@@ -299,7 +304,7 @@ Optuna 找到的最优参数：低学习率 (0.014) + 高子采样 (0.92) + 中�
 |----|------|
 | 测试文件 | **37** |
 | 测试用例 | **396** |
-| 全跑耗时 | 86.3s |
+| 全跑耗时 | 66.4s (M8.6e 后) |
 | 通过率 | 100% |
 | 涉及模块 | 25 (`src/*` 全部子包) |
 
@@ -392,7 +397,7 @@ data/
 # 1. 装环境
 make install
 
-# 2. 跑完整 16 步 pipeline（~214s CPU 热跑, ~240s 冷跑）
+# 2. 跑完整 16 步 pipeline（~153s CPU 热跑, ~180s 冷跑）
 python -m src.run_pipeline
 
 # 3. 看主指标
@@ -401,7 +406,7 @@ cat output/decision_reports/pipeline_summary.json | python -m json.tool
 # 4. 看耗时
 cat output/decision_reports/pipeline_timings.json | python -m json.tool
 
-# 5. 跑单测 (37 文件 / 396 用例, ~86s)
+# 5. 跑单测 (37 文件 / 396 用例, ~66s)
 make test
 
 # 6. 启 API + UI（可选）

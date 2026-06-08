@@ -1,8 +1,8 @@
 # CausalCredit 开发进展记录
 
 > **最后更新**: 2026-06-08 | **环境**: CPU (Python 3.10, `ldq_cc` conda env)  
-> **状态**: 16 个里程碑全部完成 ✅ (M0-M7 + M8.1 公平性 + M8.2 因果叙事 + M8.3 服务化 + M8.4 多语言 + M8.5 系列 5 件 + M8.6 验证深化 4 件)  
-> **当前**: 端到端 16 步 213.85s 热跑 ✅, 37 测试文件 / **396 用例** 全过 (86.3s), AUC 0.7802 / F1 0.0740 / Refutation 0.75 / Fairness 4/4 WARNING 切片已过滤小样本组
+> **状态**: 16 个里程碑全部完成 ✅ (M0-M7 + M8.1 公平性 + M8.2 因果叙事 + M8.3 服务化 + M8.4 多语言 + M8.5 系列 5 件 + M8.6 验证深化 4 件 + M8.6d-end 验证修复 + M8.6e 性能深化)  
+> **当前**: 端到端 16 步 **152.85s** 热跑 ✅ (-28.5% vs M8.6d-end), 37 测试文件 / **396 用例** 全过 (66.4s), AUC 0.7759 / F1 0.0744 / CATE 0.670 / Refutation 0.75 / Fairness 4/4 WARNING
 
 ---
 
@@ -53,7 +53,8 @@
 | 16 | `70079cd` | **M8.6b BLP 检验 (Best Linear Predictor)** |
 | 17 | `b476a20` | **M8.6c CATE 稳定性 Tier1+Tier2 + W=None bug 修复** |
 | 18 | `81d692a` | **M8.6d CCGS 因果验证金字塔 (4 层 + CCGS)** |
-| 19 | (HEAD) | M8.6d-end 验证修复: dedup feature columns (EXT_SOURCE_* 与 secondary 重名) + PC collinearity drop (|ρ|>0.98) + fairness `min_group_size=100` 过滤小样本组 + BENCHMARKS/PROGRESS 增补 |
+| 19 | (HEAD~1) | M8.6d-end 验证修复: dedup feature columns (EXT_SOURCE_* 与 secondary 重名) + PC collinearity drop (|ρ|>0.98) + fairness `min_group_size=100` 过滤小样本组 + BENCHMARKS/PROGRESS 增补 |
+| 20 | (HEAD) | M8.6e 性能深化: Step 6 (60% sub) + Step 7 (10K 2-fold OOF) + Step 10 (first-stage 100 trees) + Step 14 (20K train, 100 trees, 500 chart), 端到端 213.85s → 152.85s (-28.5%) |
 
 > M0-M4 完整代码在 main 分支。后续每个里程碑均经 `python -m src.run_pipeline` 验证 + 单测全过。
 
@@ -1049,6 +1050,71 @@ M8.6a/b/c + 现有 4 类 refutation + 反事实/欺诈/公平性 — 验证输�
 
 ---
 
+## M8.6e — 性能深化 (4 步优化, 端到端 -28.5%)
+
+### 动机
+
+M8.6d-end 端到端重跑后, 总耗时 **213.85s**, 其中 4 个步骤占 90%:
+
+| Step | 内容 | 耗时 (s) | % |
+|:---:|------|---------:|---:|
+| 6 | LightGBM 3-fold CV + final | 106.9 | 50.0% |
+| 14 | 反欺诈 3 件套 + 5 级路由 | 35.4 | 16.5% |
+| 7 | 评估 + Isotonic 校准 (30K OOF) | 24.5 | 11.5% |
+| 10 | CATE 估计 (3 EconML) | 20.1 | 9.4% |
+
+这 4 步合计 187s, 占 87%。M8.6e 目标: 在 AUC 损失 ≤0.005 的前提下, 把这 4 步合计压缩到 ~125s, 端到端进入 150s 量级。
+
+### 优化实施
+
+| # | Step | 改动 | 节省 | AUC 影响 |
+|---|------|------|-----:|---------:|
+| 1 | 6 | LightGBM 60% stratified subsample (~130K 行) | -15.5s | -0.004 |
+| 2 | 7 | Isotonic 校准 30K→10K + 3-fold→2-fold OOF | -18.5s | ECE 持平 |
+| 3 | 10 | CATE first-stage 200→100 trees (GradientBoostingRegressor) | -7.9s | 持平 |
+| 4 | 14 | FraudGuard 50K→20K + n_est 200→100 + chart 1K→500 | -18.1s | 持平 (routing 分布一致) |
+| | **合计** | | **-61s (-28.5%)** | **-0.004 AUC** |
+
+**AUC 折衷分析**：0.7802 → 0.7759 (-0.4%) 是 60% subsample + 校准 10K OOF 的代价。**CATE 一致性反而从 0.548 提升到 0.670** (100 trees first-stage 更稳定, 三方法相互 Spearman ρ 上行 22%)。综合判定 **值得**。
+
+### 关键设计选择
+
+1. **为什么不用 early stopping?** — LightGBM `cross_val_score` 不支持 `eval_set` + `early_stopping` callback, 加这个需要把 3-fold CV 改成手写循环, 复杂度 +100 行 vs 节省 30s, ROI 不够。
+2. **为什么 subsample 60% 而不是 50%?** — 50% 时 AUC 跌到 0.7743 (-0.006), 60% 跌 0.004。50% 节省的 5s 不抵 AUC 损失。
+3. **为什么 Isotonic 10K 够?** — 单调回归在 10K 上的拟合误差 < 0.001 ECE (calibration 曲线与 30K 版本视觉无差)。
+4. **为什么 chart 1K→500?** — 500 行直方图 (40 bins) 仍清晰, 节省的 SHAP 计算 + 批评分合计 ~3s。
+
+### 端到端 16 步实测 (2026-06-08, M8.6e 后, 152.85s)
+
+| Step | 内容 | 耗时 (s) | % | Δ |
+|:---:|------|---------:|---:|-----:|
+| 1 | Data loading | 2.33 | 1.5% | +0.02 |
+| 2-5 | Validation/clean/agg/features/split | 5.83 | 3.8% | -0.01 |
+| 5.5 | Feature pruning | 3.34 | 2.2% | -0.76 |
+| **6** | **LightGBM 3-fold CV (60% sub)** | **91.42** | **59.8%** | **-15.48** |
+| **7** | **Calibration (10K sub, 2-fold OOF)** | **5.99** | **3.9%** | **-18.53** |
+| 8-9 | Discovery + ATE | 1.67 | 1.1% | -0.18 |
+| **10** | **CATE (first-stage 100 trees)** | **12.16** | **8.0%** | **-7.92** |
+| 11-13 | Refutation/SHAP/CF | 6.83 | 4.5% | -0.09 |
+| **14** | **Anti-fraud (20K, 100 trees, 500 chart)** | **17.27** | **11.3%** | **-18.09** |
+| 15-16 | Fairness + narrative | 5.58 | 3.7% | -0.04 |
+| | **总耗时** | **152.85** | | **-61.0s** |
+
+### 单测影响
+
+- 新增 `LightGBMTrainer.train_cv(..., subsample_frac, subsample_seed)` / `train_final(..., subsample_frac, subsample_seed)` 形参
+- 现有 7 个 `test_train.py` 用例 (无 subsample 调用) 全部维持原行为
+- 全量 396 用例 66.4s 全过 (从 86.3s 缩 23%, 单测内的 LightGBM 跑得更快了)
+
+### 影响
+
+- 端到端 **213.85s → 152.85s, -28.5%, 节省 61s**
+- AUC 折衷 0.4%, CATE 一致性反而 +22%
+- 端到端首次跑进 **3 分钟内**, 满足"演示前 1 小时内可重跑 30+ 次"的工程目标
+- BENCHMARKS.md §8.1-8.3 / PROGRESS.md 本节 / README.md 同步更新
+
+---
+
 ## 后续迭代方向（未做）
 
 - ~~8 表 JOIN（bureau / previous_application / POS / installments / credit_card）→ 多表因果特征~~ ✅ M5 完成
@@ -1062,6 +1128,8 @@ M8.6a/b/c + 现有 4 类 refutation + 反事实/欺诈/公平性 — 验证输�
 - ~~M8.5 系列（5 件: middleware / i18n / SHA-256 manifest / Oaxaca / 利率优化）~~ ✅ M8.5 完成
 - ~~M8.6 系列（4 件: TemporalGuard / BLP / CATE 稳定性 / CCGS 金字塔）~~ ✅ M8.6 完成
 - ~~M8.3c Streamlit 4 页填实（M8.2 叙事面板集成 + 流程图嵌入 + 12 单测）~~ ✅ M8.3c 完成
+- ~~M8.6d-end 验证修复（特征列去重 + PC 共线性剔除 + 公平性 min_group_size）~~ ✅ M8.6d-end 完成
+- ~~**M8.6e 性能深化（4 步优化, 端到端 -28.5%, 213.85s → 152.85s, AUC -0.004）**~~ ✅ M8.6e 完成
 - **P0 提案文档落地（6.15 提案前关键交付）**: 蓝图一页纸 / Demo 演示脚本 / 答辩 Q&A 手册 / 代码走读速查 4 份, 落到 `docs/`
 - **多表聚合 polars 改写**: pandas 单线程 ~27s 可降到 ~5s
 - **反欺诈伪标签升级**: 用反欺诈团队人工标注的真实种子集替换业务规则

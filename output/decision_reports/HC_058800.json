@@ -1,7 +1,7 @@
 {
   "applicant_id": "HC_058800",
-  "timestamp": "2026-06-08T00:33:01.774988Z",
-  "default_probability": 0.8927,
+  "timestamp": "2026-06-08T01:23:58.629834Z",
+  "default_probability": 0.8949,
   "score": 319,
   "risk_grade": "E",
   "decision_suggestion": "DECLINE — high risk; recommend rejection or sub-prime product",
@@ -9,42 +9,42 @@
     {
       "feature": "EXT_SOURCE_3",
       "value": 0.0371194125972502,
-      "shap": 1.1278794516364021,
+      "shap": 1.4087273419620823,
       "quadrant": "TRUSTED"
     },
     {
       "feature": "EXT_SOURCE_2",
       "value": 1.1793951733999552e-05,
-      "shap": 1.0499850735508809,
+      "shap": 1.1157980153505465,
       "quadrant": "TRUSTED"
     },
     {
       "feature": "BUREAU_AMT_CREDIT_SUM_OVERDUE_MAX",
       "value": 53307.0,
-      "shap": 0.38201122852571623,
+      "shap": 0.560269242083722,
+      "quadrant": "MASKED"
+    },
+    {
+      "feature": "BUREAU_AMT_CREDIT_SUM_OVERDUE_SUM",
+      "value": 131728.5,
+      "shap": 0.343331688644016,
       "quadrant": "MASKED"
     },
     {
       "feature": "BUREAU_AMT_CREDIT_SUM_DEBT_MEAN",
       "value": 273471.76125,
-      "shap": 0.26256034554112156,
+      "shap": 0.2750188794101889,
       "quadrant": "UNTRUSTED"
-    },
-    {
-      "feature": "BUREAU_AMT_CREDIT_SUM_OVERDUE_MEAN",
-      "value": 10977.375,
-      "shap": 0.22526118135455578,
-      "quadrant": "MASKED"
     }
   ],
   "cate_insights": [
     "Heterogeneous treatment effect (CATE) for this applicant: 0.0000",
-    "Four-quadrant distribution: TRUSTED=65, UNTRUSTED=42, NEGLIGIBLE=64, MASKED=42",
+    "Four-quadrant distribution: TRUSTED=64, UNTRUSTED=43, NEGLIGIBLE=63, MASKED=43",
     "ATE estimate: 0.0000",
     "Refutation robustness score: 0.75"
   ],
   "counterfactual_recommendations": [],
-  "causal_narrative": "Default risk is 89.27% (score=319, grade E). Primary driver: EXT_SOURCE_3 (SHAP=+1.1279, quadrant=TRUSTED). Heterogeneous effect estimate: |CATE|=0.0000.",
+  "causal_narrative": "Default risk is 89.49% (score=319, grade E). Primary driver: EXT_SOURCE_3 (SHAP=+1.4087, quadrant=TRUSTED). Heterogeneous effect estimate: |CATE|=0.0000.",
   "fairness": {
     "applicant_groups": {
       "gender": "UNKNOWN",
@@ -56,103 +56,102 @@
       {
         "slice": "gender",
         "status": "WARNING",
-        "dp_gap": 0.005,
-        "eo_gap": 0.0124,
-        "di_ratio": 0.4725,
+        "dp_gap": 0.0045,
+        "eo_gap": 0.0147,
+        "di_ratio": 0.4933,
         "n_groups": 3,
         "n_total": 50000,
         "violated_metrics": [
-          "DI=0.472<0.8"
+          "DI=0.493<0.8"
         ]
       },
       {
         "slice": "age_group",
         "status": "WARNING",
         "dp_gap": 0.0096,
-        "eo_gap": 0.0411,
-        "di_ratio": 0.0816,
+        "eo_gap": 0.0452,
+        "di_ratio": 0.0507,
         "n_groups": 3,
         "n_total": 50000,
         "violated_metrics": [
-          "DI=0.082<0.8"
+          "DI=0.051<0.8"
         ]
       },
       {
         "slice": "income_group",
         "status": "WARNING",
-        "dp_gap": 0.0034,
-        "eo_gap": 0.022,
-        "di_ratio": 0.5481,
+        "dp_gap": 0.0035,
+        "eo_gap": 0.0195,
+        "di_ratio": 0.5193,
         "n_groups": 3,
         "n_total": 50000,
         "violated_metrics": [
-          "DI=0.548<0.8"
+          "DI=0.519<0.8"
         ]
       },
       {
         "slice": "education_group",
-        "status": "UNFAIR",
-        "dp_gap": 0.008,
-        "eo_gap": 0.0509,
+        "status": "WARNING",
+        "dp_gap": 0.0075,
+        "eo_gap": 0.0462,
         "di_ratio": 0.0,
         "n_groups": 4,
         "n_total": 50000,
         "violated_metrics": [
-          "EO_gap=0.051>0.05",
           "DI=0.000<0.8"
         ]
       }
     ],
-    "verdict": "UNFAIR",
+    "verdict": "WARNING",
     "violated_slices": [
       "gender",
       "age_group",
       "income_group",
       "education_group"
     ],
-    "regulatory_note": "At least one protected slice is UNFAIR under HKMA / EU AI Act guidance. Decision must be reviewed by a human officer before issuance."
+    "regulatory_note": "One or more slices are WARNING. Model output may be biased; request additional documentation from the applicant."
   },
   "fraud": {
-    "fraud_score": 0.00020596871117950285,
+    "fraud_score": 0.0048424355715420515,
     "defaulter_sub_proba": {
-      "fraudulent": 0.00023073355329099215,
-      "non_malicious": 0.999769266446709,
+      "fraudulent": 0.005410912987990469,
+      "non_malicious": 0.9945890870120095,
       "systemic": 0.0
     },
-    "packaging_score": 0.37735849056603776,
+    "packaging_score": 0.41509433962264153,
     "path_integrity": 1.0,
     "denoised_default_proba": 1.0,
     "causal_consistency": 0.5,
     "inflation_strength": 0.15,
     "routing": "REVIEW_BORDERLINE",
     "routing_reasons": [
-      "packaging_score=0.377 in [0.30, 0.50) borderline"
+      "packaging_score=0.415 in [0.30, 0.50) borderline"
     ]
   },
   "causal_narrative_v2": {
     "model_level": {
       "top_features": [
         {
-          "feature": "EXT_SOURCE_2",
-          "mean_abs_shap": 0.3015014425052128
+          "feature": "EXT_SOURCE_3",
+          "mean_abs_shap": 0.29988355533476374
         },
         {
-          "feature": "EXT_SOURCE_3",
-          "mean_abs_shap": 0.2854444926496062
+          "feature": "EXT_SOURCE_2",
+          "mean_abs_shap": 0.2991024666706194
         },
         {
           "feature": "EXT_SOURCE_1",
-          "mean_abs_shap": 0.1547231275234429
+          "mean_abs_shap": 0.17001309639283488
         }
       ],
-      "narrative": "At the model level, P(default) for the average applicant is driven primarily by EXT_SOURCE_2 (mean |SHAP|=0.3015), followed by EXT_SOURCE_3 (0.2854) and EXT_SOURCE_1 (0.1547). These three features account for the bulk of all decisions.",
-      "feature_summary": "EXT_SOURCE_2 (0.3015), EXT_SOURCE_3 (0.2854), EXT_SOURCE_1 (0.1547)"
+      "narrative": "At the model level, P(default) for the average applicant is driven primarily by EXT_SOURCE_3 (mean |SHAP|=0.2999), followed by EXT_SOURCE_2 (0.2991) and EXT_SOURCE_1 (0.1700). These three features account for the bulk of all decisions.",
+      "feature_summary": "EXT_SOURCE_3 (0.2999), EXT_SOURCE_2 (0.2991), EXT_SOURCE_1 (0.1700)"
     },
     "cohort_level": {
       "k": 10,
-      "cohort_mean_p_default": 0.4440346796853354,
-      "applicant_p_default": 0.8926690905667419,
-      "delta": 0.44863441088140654,
+      "cohort_mean_p_default": 0.5201735816310542,
+      "applicant_p_default": 0.89493872518184,
+      "delta": 0.37476514355078583,
       "top_deviations": [
         {
           "feature": "BUREAU_AMT_CREDIT_SUM_OVERDUE_SUM",
@@ -185,14 +184,14 @@
           "cohort_mean": 219145.8
         }
       ],
-      "narrative": "Among the 10 training applicants most similar to this one, the average P(default) is 44.40%, so this applicant's P(default) of 89.27% is noticeably higher than the cohort (Δ=+0.4486). The applicant deviates most from the cohort in: BUREAU_AMT_CREDIT_SUM_OVERDUE_SUM (z=+5.23), NAME_HOUSING_TYPE (z=+3.70), BUREAU_AMT_ANNUITY_SUM (z=+3.46)."
+      "narrative": "Among the 10 training applicants most similar to this one, the average P(default) is 52.02%, so this applicant's P(default) of 89.49% is noticeably higher than the cohort (Δ=+0.3748). The applicant deviates most from the cohort in: BUREAU_AMT_CREDIT_SUM_OVERDUE_SUM (z=+5.23), NAME_HOUSING_TYPE (z=+3.70), BUREAU_AMT_ANNUITY_SUM (z=+3.46)."
     },
     "individual_level": {
       "top_features": [
         {
           "feature": "EXT_SOURCE_3",
           "value": 0.0371194125972502,
-          "shap": 1.1278794516364021,
+          "shap": 1.4087273419620823,
           "quadrant": "TRUSTED",
           "direction": "increases_default",
           "dag_paths": [
@@ -206,7 +205,7 @@
         {
           "feature": "EXT_SOURCE_2",
           "value": 1.1793951733999552e-05,
-          "shap": 1.0499850735508809,
+          "shap": 1.1157980153505465,
           "quadrant": "TRUSTED",
           "direction": "increases_default",
           "dag_paths": [
@@ -220,7 +219,16 @@
         {
           "feature": "BUREAU_AMT_CREDIT_SUM_OVERDUE_MAX",
           "value": 53307.0,
-          "shap": 0.38201122852571623,
+          "shap": 0.560269242083722,
+          "quadrant": "MASKED",
+          "direction": "increases_default",
+          "dag_paths": [],
+          "n_paths": 0
+        },
+        {
+          "feature": "BUREAU_AMT_CREDIT_SUM_OVERDUE_SUM",
+          "value": 131728.5,
+          "shap": 0.343331688644016,
           "quadrant": "MASKED",
           "direction": "increases_default",
           "dag_paths": [],
@@ -229,23 +237,14 @@
         {
           "feature": "BUREAU_AMT_CREDIT_SUM_DEBT_MEAN",
           "value": 273471.76125,
-          "shap": 0.26256034554112156,
+          "shap": 0.2750188794101889,
           "quadrant": "UNTRUSTED",
-          "direction": "increases_default",
-          "dag_paths": [],
-          "n_paths": 0
-        },
-        {
-          "feature": "BUREAU_AMT_CREDIT_SUM_OVERDUE_MEAN",
-          "value": 10977.375,
-          "shap": 0.22526118135455578,
-          "quadrant": "MASKED",
           "direction": "increases_default",
           "dag_paths": [],
           "n_paths": 0
         }
       ],
-      "narrative": "The dominant risk driver is EXT_SOURCE_3 (SHAP=+1.1279, quadrant=TRUSTED). In the causal DAG this feature reaches TARGET via: EXT_SOURCE_3 → TARGET. 1 of the top-5 features are UNTRUSTED (model says important, but no causal support); 2 are TRUSTED (model and causal both agree); 2 are MASKED (causal signal hidden by model)..",
+      "narrative": "The dominant risk driver is EXT_SOURCE_3 (SHAP=+1.4087, quadrant=TRUSTED). In the causal DAG this feature reaches TARGET via: EXT_SOURCE_3 → TARGET. 1 of the top-5 features are UNTRUSTED (model says important, but no causal support); 2 are TRUSTED (model and causal both agree); 2 are MASKED (causal signal hidden by model)..",
       "dominant_feature": "EXT_SOURCE_3",
       "dominant_dag_path": [
         "EXT_SOURCE_3",
@@ -259,9 +258,9 @@
       "n_perturbations": 20,
       "noise_frac": 0.1,
       "top_1_stable": 1.0,
-      "top_3_stable": 0.9,
-      "stability_score": 0.96,
-      "interpretation": "Explanation is robust (stability=0.96)."
+      "top_3_stable": 1.0,
+      "stability_score": 1.0,
+      "interpretation": "Explanation is robust (stability=1.00)."
     },
     "applicant_id": "HC_058800"
   }
