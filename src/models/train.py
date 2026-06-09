@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.metrics import roc_auc_score, accuracy_score
 
 
 class GBTrainer:
@@ -104,7 +105,9 @@ class LightGBMTrainer:
         self.study_: Optional["optuna.Study"] = None
 
     def train_cv(self, X: pd.DataFrame, y: pd.Series, n_folds: int = 5,
-                 subsample_frac: float = 1.0, subsample_seed: int = 42) -> Dict[str, float]:
+                 subsample_frac: float = 1.0, subsample_seed: int = 42,
+                 early_stopping_rounds: Optional[int] = 50,
+                 eval_fraction: float = 0.15) -> Dict[str, float]:
         """Run stratified K-fold cross-validation on (X, y).
 
         Parameters
@@ -112,6 +115,15 @@ class LightGBMTrainer:
         subsample_frac : float in (0, 1]
             If < 1.0, take a stratified subsample of the rows before CV. Used
             to keep the 3-fold CV wall-time down on full Home Credit (~215K rows).
+        early_stopping_rounds : int or None
+            If given, use LightGBM early stopping with this patience. For each
+            CV fold we sub-split the fold train into sub-train + sub-val; the
+            model fits on sub-train and stops when sub-val AUC plateaus. The
+            final model is then evaluated on the held-out fold. Default 50.
+            Pass 0 or None to disable.
+        eval_fraction : float in (0, 1)
+            Fraction of each fold's training rows reserved for the early-stop
+            validation set. Default 0.15.
         """
         import lightgbm as lgb
         if subsample_frac < 1.0:
@@ -121,22 +133,57 @@ class LightGBMTrainer:
                 stratify=y,
             )
             X, y = X_sub, y_sub
-        model = lgb.LGBMClassifier(**self.params)
-        cv = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=42)
-        auc = cross_val_score(model, X, y, cv=cv, scoring="roc_auc")
-        acc = cross_val_score(model, X, y, cv=cv, scoring="accuracy")
+
+        use_es = early_stopping_rounds is not None and early_stopping_rounds > 0
+        kf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=42)
+        auc_scores: List[float] = []
+        acc_scores: List[float] = []
+        best_iters: List[int] = []
+
+        for fold, (tr_idx, va_idx) in enumerate(kf.split(X, y)):
+            X_tr_full, X_va = X.iloc[tr_idx], X.iloc[va_idx]
+            y_tr_full, y_va = y.iloc[tr_idx], y.iloc[va_idx]
+            if use_es:
+                from sklearn.model_selection import train_test_split
+                X_sub_tr, X_sub_va, y_sub_tr, y_sub_va = train_test_split(
+                    X_tr_full, y_tr_full, test_size=eval_fraction,
+                    random_state=subsample_seed + fold, stratify=y_tr_full,
+                )
+                model = lgb.LGBMClassifier(**self.params)
+                model.fit(
+                    X_sub_tr, y_sub_tr,
+                    eval_set=[(X_sub_va, y_sub_va)],
+                    callbacks=[lgb.early_stopping(early_stopping_rounds, verbose=False)],
+                )
+                best_iters.append(int(model.best_iteration_ or self.params["n_estimators"]))
+            else:
+                model = lgb.LGBMClassifier(**self.params)
+                model.fit(X_tr_full, y_tr_full)
+            pred = model.predict_proba(X_va)[:, 1]
+            auc_scores.append(float(roc_auc_score(y_va, pred)))
+            acc_scores.append(float(accuracy_score(y_va, (pred >= 0.5).astype(int))))
+
         return {
-            "cv_auc_mean": float(auc.mean()),
-            "cv_auc_std": float(auc.std()),
-            "cv_accuracy_mean": float(acc.mean()),
-            "cv_accuracy_std": float(acc.std()),
+            "cv_auc_mean": float(np.mean(auc_scores)),
+            "cv_auc_std": float(np.std(auc_scores)),
+            "cv_accuracy_mean": float(np.mean(acc_scores)),
+            "cv_accuracy_std": float(np.std(acc_scores)),
             "n_folds": n_folds,
             "subsample_frac": subsample_frac,
+            "early_stopping_rounds": early_stopping_rounds if use_es else 0,
+            "best_iteration_mean": float(np.mean(best_iters)) if best_iters else None,
         }
 
     def train_final(self, X: pd.DataFrame, y: pd.Series,
-                    subsample_frac: float = 1.0, subsample_seed: int = 42):
-        """Fit on (X, y). If ``subsample_frac < 1.0``, take a stratified subsample first."""
+                    subsample_frac: float = 1.0, subsample_seed: int = 42,
+                    early_stopping_rounds: Optional[int] = 50,
+                    eval_fraction: float = 0.15):
+        """Fit on (X, y). If ``subsample_frac < 1.0``, take a stratified subsample first.
+
+        If ``early_stopping_rounds`` is given, take a small eval holdout for
+        early stopping (so the model is fit on ``(1 - eval_fraction)`` of the
+        rows and validated on the rest). Default 50.
+        """
         import lightgbm as lgb
         if subsample_frac < 1.0:
             from sklearn.model_selection import train_test_split
@@ -145,8 +192,22 @@ class LightGBMTrainer:
                 stratify=y,
             )
             X, y = X_sub, y_sub
+
+        use_es = early_stopping_rounds is not None and early_stopping_rounds > 0
         self.model = lgb.LGBMClassifier(**self.params)
-        self.model.fit(X, y)
+        if use_es:
+            from sklearn.model_selection import train_test_split
+            X_tr, X_es, y_tr, y_es = train_test_split(
+                X, y, test_size=eval_fraction, random_state=subsample_seed,
+                stratify=y,
+            )
+            self.model.fit(
+                X_tr, y_tr,
+                eval_set=[(X_es, y_es)],
+                callbacks=[lgb.early_stopping(early_stopping_rounds, verbose=False)],
+            )
+        else:
+            self.model.fit(X, y)
         self.feature_importances_ = self.model.feature_importances_
         self.feature_names_ = list(X.columns)
         return self.model

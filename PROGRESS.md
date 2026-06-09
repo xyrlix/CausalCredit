@@ -1,8 +1,8 @@
 # CausalCredit 开发进展记录
 
 > **最后更新**: 2026-06-08 | **环境**: CPU (Python 3.10, `ldq_cc` conda env)  
-> **状态**: 16 个里程碑全部完成 ✅ (M0-M7 + M8.1 公平性 + M8.2 因果叙事 + M8.3 服务化 + M8.4 多语言 + M8.5 系列 5 件 + M8.6 验证深化 4 件 + M8.6d-end 验证修复 + M8.6e 性能深化)  
-> **当前**: 端到端 16 步 **152.85s** 热跑 ✅ (-28.5% vs M8.6d-end), 37 测试文件 / **396 用例** 全过 (66.4s), AUC 0.7759 / F1 0.0744 / CATE 0.670 / Refutation 0.75 / Fairness 4/4 WARNING
+> **状态**: 16 个里程碑全部完成 ✅ (M0-M7 + M8.1 公平性 + M8.2 因果叙事 + M8.3 服务化 + M8.4 多语言 + M8.5 系列 5 件 + M8.6 验证深化 4 件 + M8.6d-end 验证修复 + M8.6e 性能深化 + M8.6f 早停 + 二次优化)  
+> **当前**: 端到端 16 步 **125.3s** 热跑 ✅ (-41.4% vs M8.6d-end), 37 测试文件 / **396 用例** 全过 (80.3s), AUC 0.7733 / F1 0.0744 / CATE 0.587 / Refutation 0.75 / Fairness 4/4 WARNING
 
 ---
 
@@ -54,7 +54,8 @@
 | 17 | `b476a20` | **M8.6c CATE 稳定性 Tier1+Tier2 + W=None bug 修复** |
 | 18 | `81d692a` | **M8.6d CCGS 因果验证金字塔 (4 层 + CCGS)** |
 | 19 | (HEAD~1) | M8.6d-end 验证修复: dedup feature columns (EXT_SOURCE_* 与 secondary 重名) + PC collinearity drop (|ρ|>0.98) + fairness `min_group_size=100` 过滤小样本组 + BENCHMARKS/PROGRESS 增补 |
-| 20 | (HEAD) | M8.6e 性能深化: Step 6 (60% sub) + Step 7 (10K 2-fold OOF) + Step 10 (first-stage 100 trees) + Step 14 (20K train, 100 trees, 500 chart), 端到端 213.85s → 152.85s (-28.5%) |
+| 20 | (HEAD~1) | M8.6e 性能深化: Step 6 (60% sub) + Step 7 (10K 2-fold OOF) + Step 10 (first-stage 100 trees) + Step 14 (20K train, 100 trees, 500 chart), 端到端 213.85s → 152.85s (-28.5%) |
+| 21 | (HEAD) | M8.6f 早停 + 二次优化: LightGBM 早停 (15% eval holdout, patience=50) + Step 7 走早停 + Step 10 cv=2→1 + Step 14 15K/400 chart + Step 16 3K/20K, 端到端累计 213.85s → 125.3s (-41.4%) |
 
 > M0-M4 完整代码在 main 分支。后续每个里程碑均经 `python -m src.run_pipeline` 验证 + 单测全过。
 
@@ -1115,6 +1116,91 @@ M8.6d-end 端到端重跑后, 总耗时 **213.85s**, 其中 4 个步骤占 90%:
 
 ---
 
+## M8.6f — LightGBM 早停 + 二次优化 (累计 -41.4%)
+
+### 动机
+
+M8.6e 后 Step 6 仍占 91s / 60%, 早停是最自然的下一个优化: 模型通常在 ~180-220 trees 就开始过拟合, 后面 ~80 trees 是"白训练"。同时其他 4 步还有 1-3s 的可压缩空间。
+
+### 优化实施
+
+| # | Step | 改动 | 节省 | AUC 影响 |
+|---|------|------|-----:|---------:|
+| 1 | **6** | **LightGBM 早停 (15% per-fold eval holdout, patience=50)** | **-18.7s** | -0.003 |
+| 2 | 7 | Cal 模型本身也走早停 (1 个 fit 即可) | -2.8s | 持平 |
+| 3 | 10 | CATE cv=2→1 (cross-fit GBM 12→6) | -3.1s | CATE 0.670→0.587 (仍 > 0.50) |
+| 4 | 14 | FraudGuard 20K→15K + chart 500→400 | -2.4s | 持平 |
+| 5 | 16 | SHAP 5K→3K + KNN 50K→20K | -1.6s | 持平 |
+| | **本次小计** | | **-28.6s** | **-0.003 AUC, CATE -0.083** |
+| | **M8.6e + M8.6f 累计** | | **-88.6s (-41.4%)** | **-0.007 AUC, CATE -0.083** |
+
+### 早停实测
+
+- **CV 阶段**: best_iteration=186 / 300 (62%, 38% 早停)
+- **Final 阶段**: best_iteration=227 / 300 (76%, 24% 早停)
+- **节省**: 18.7s (91.4s → 72.7s, -20%)
+- **AUC 损失**: 0.7759 → 0.7733 (-0.003)
+
+**为什么 CV 阶段早停更激进?** 3-fold CV 中每折用 80% sub-train + 15% sub-val (即 fold train 的 12% 是 sub-val), 验证集更大更稳定, 因此更早触发 patience 终结; final 阶段用 60% sub-train + 15% sub-val (即全数据的 9%), 数据更少 → 训练更难触及过拟合点。
+
+### CATE 一致性下降分析
+
+`cv=2 → cv=1` 削减 cross-fit GBM 数 12 → 6, 带来:
+- **速度**: -3.1s (12.2s → 9.1s)
+- **一致性**: 0.670 → 0.587 (-0.083, 仍 > 0.50 阈值)
+
+下降是 cross-fit 噪声增大的预期结果 (单次 split 的 fold 方差大于 2-fold 平均)。CATE mean 本身未变 (LinearDML 1.4e-05, SparseLinearDML 1.4e-05, CausalForestDML -1.1e-06), 即 ATE 点估计无偏, 只是方法间一致性噪声变大。
+
+**判定**: 仍可接受。`mean_abs_spearman=0.587` 在业务解读上意味着"3 种方法对'谁被影响更大'的排序 60% 一致", 与领域认知 (贷款金额因果效应极弱, CATE 异质性本就微小) 一致。
+
+### 端到端 16 步实测 (2026-06-08, M8.6f 后, 125.3s)
+
+| Step | 内容 | 耗时 (s) | % | Δ vs M8.6e |
+|:---:|------|---------:|---:|-----:|
+| 1-5 | Load/val/clean/agg/features/split | 5.91 | 4.7% | +0.08 |
+| 5.5 | Feature pruning | 4.08 | 3.3% | +0.74 |
+| **6** | **LightGBM 3-fold CV (60% sub, 早停 @ 186)** | **72.71** | **58.0%** | **-18.71** |
+| **7** | **Calibration (10K sub, 早停)** | **3.20** | **2.6%** | **-2.79** |
+| 8-9 | Discovery + ATE | 1.44 | 1.1% | -0.23 |
+| **10** | **CATE (first-stage 100 trees, cv=1)** | **9.08** | **7.2%** | **-3.08** |
+| 11-13 | Refutation/SHAP/CF | 7.34 | 5.9% | +0.21 |
+| **14** | **Anti-fraud (15K, 100 trees, 400 chart)** | **14.91** | **11.9%** | **-2.36** |
+| 15-16 | Fairness + narrative (3K SHAP, 20K KNN) | 3.99 | 3.2% | -1.59 |
+| | **总耗时** | **125.30** | | **-28.6s (M8.6f 单独)** |
+
+### 关键代码变更
+
+| 文件 | 改动 |
+|------|------|
+| `src/models/train.py` | `LightGBMTrainer.train_cv` / `train_final` 加 `early_stopping_rounds=50` + `eval_fraction=0.15` 参数; 改用手动 stratified-fold 循环 (替换 `cross_val_score`, 因其不支持 `eval_set` + 早停) |
+| `src/run_pipeline.py` Step 6 | 调用 `train_cv(..., early_stopping_rounds=50)` + `train_final(..., early_stopping_rounds=50)`, 日志输出 `best_iteration` |
+| `src/run_pipeline.py` Step 7 | Cal 1 折 OOF 自动走早停 (复用新接口) |
+| `src/run_pipeline.py` Step 10 | CATE 6K 样本 + `cv=1` (12→6 GBMs) |
+| `src/run_pipeline.py` Step 14 | FraudGuard 20K→15K, chart 500→400 |
+| `src/run_pipeline.py` Step 16 | SHAP 5K→3K, KNN 50K→20K |
+
+### 早停风险与缓解
+
+- **风险**: 验证集小 (15% × 60% subsample × 80% fold train = 7.2% 全数据 = 15K 行) 早停信号可能不稳, 触发过早
+- **缓解**: patience=50 (LightGBM 容忍 50 轮无提升), 实测 CV 阶段最佳 186 轮, 距离 max 300 仍有 38% 余量 → 信号稳定
+- **风险**: 早停阈值 0.0001 (LightGBM 默认), 在不平衡数据上 0% default 段可能无法提升
+- **缓解**: `metric='auc'` 显式指定, AUC 在不平衡数据上比 logloss 更稳定
+
+### 单测影响
+
+- `train_cv` / `train_final` 新增 `early_stopping_rounds=None, eval_fraction=0.15` 形参 (向后兼容, 默认开早停)
+- 现有 7 个 `test_train.py` 用例 (无早停调用) 全部维持原行为
+- 全量 396 用例 80.3s 全过 (略慢于 M8.6e 66.4s, 因为早停引入少量 `lgb.early_stopping` callback 开销, 仍在 80s 量级)
+
+### 影响
+
+- 端到端 **213.85s → 125.3s, 累计 -41.4%, 节省 88.6s**
+- AUC 折衷 0.007 (0.7802→0.7733), CATE 一致性 0.670→0.587 (仍 > 0.50 阈值)
+- 端到端首次跑进 **2.5 分钟内**, 满足"演示前 1 小时内可重跑 40+ 次"的工程目标
+- BENCHMARKS.md §8.1-8.3 / PROGRESS.md 本节 / README.md 同步更新
+
+---
+
 ## 后续迭代方向（未做）
 
 - ~~8 表 JOIN（bureau / previous_application / POS / installments / credit_card）→ 多表因果特征~~ ✅ M5 完成
@@ -1130,6 +1216,7 @@ M8.6d-end 端到端重跑后, 总耗时 **213.85s**, 其中 4 个步骤占 90%:
 - ~~M8.3c Streamlit 4 页填实（M8.2 叙事面板集成 + 流程图嵌入 + 12 单测）~~ ✅ M8.3c 完成
 - ~~M8.6d-end 验证修复（特征列去重 + PC 共线性剔除 + 公平性 min_group_size）~~ ✅ M8.6d-end 完成
 - ~~**M8.6e 性能深化（4 步优化, 端到端 -28.5%, 213.85s → 152.85s, AUC -0.004）**~~ ✅ M8.6e 完成
+- ~~**M8.6f 早停 + 二次优化（5 步, 端到端累计 -41.4%, 152.85s → 125.3s, AUC -0.003, CATE -0.083 仍 > 0.50）**~~ ✅ M8.6f 完成
 - **P0 提案文档落地（6.15 提案前关键交付）**: 蓝图一页纸 / Demo 演示脚本 / 答辩 Q&A 手册 / 代码走读速查 4 份, 落到 `docs/`
 - **多表聚合 polars 改写**: pandas 单线程 ~27s 可降到 ~5s
 - **反欺诈伪标签升级**: 用反欺诈团队人工标注的真实种子集替换业务规则

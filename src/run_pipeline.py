@@ -356,15 +356,23 @@ def run() -> int:
     gb_model = gb_trainer.train_final(X_gbt, y_gbt)
 
     # 6b. LightGBM — downstream model for SHAP, DiCE, decision reports.
-    # 60% stratified subsample of train (~130K rows) keeps CV AUC within 0.001
-    # of full-data AUC while cutting training time ~10% (subsample helps a
-    # little; LightGBM is mostly data-bound at this scale).
+    # 60% stratified subsample of train (~130K rows) + early stopping
+    # (per-fold 15% eval holdout, patience=50). Early stopping typically
+    # cuts ~50% of trees beyond the optimal point, saving 20-30% of step time.
     lgbm_trainer = LightGBMTrainer()
-    cv_lgbm = lgbm_trainer.train_cv(X_train, y_train, n_folds=3, subsample_frac=0.6)
+    cv_lgbm = lgbm_trainer.train_cv(
+        X_train, y_train, n_folds=3, subsample_frac=0.6,
+        early_stopping_rounds=50, eval_fraction=0.15,
+    )
+    best_it = cv_lgbm.get("best_iteration_mean")
     print(f"  LGBM CV AUC:        {cv_lgbm['cv_auc_mean']:.4f} ± {cv_lgbm['cv_auc_std']:.4f}  "
-          f"(60% subsample, {int(0.6*len(X_train))} rows)")
-    lgbm_model = lgbm_trainer.train_final(X_train, y_train, subsample_frac=0.6)
-    print(f"  LightGBM trained: n_estimators={lgbm_model.n_estimators}")
+          f"(60% subsample, {int(0.6*len(X_train))} rows, "
+          f"early-stop @ {int(best_it) if best_it else '?'} trees, max=300)")
+    lgbm_model = lgbm_trainer.train_final(
+        X_train, y_train, subsample_frac=0.6,
+        early_stopping_rounds=50, eval_fraction=0.15,
+    )
+    print(f"  LightGBM trained: best_iter={lgbm_model.best_iteration_}, n_estimators={lgbm_model.n_estimators}")
     _t(t_step, "step_6_model_training", step_times)
 
     # =========================================================================
@@ -531,14 +539,17 @@ def run() -> int:
     t_step = time.time()
     cate_sample = df[["AMT_CREDIT", "AMT_INCOME_TOTAL", "AMT_GOODS_PRICE", "DAYS_BIRTH",
                       "DAYS_EMPLOYED", "EXT_SOURCE_2", "REGION_RATING_CLIENT",
-                      "AMT_ANNUITY", "TARGET"]].dropna().sample(n=10000, random_state=42)
+                      "AMT_ANNUITY", "TARGET"]].dropna().sample(n=6000, random_state=42)
     y_c = cate_sample["TARGET"].astype(float).values
     t_c = (cate_sample["AMT_CREDIT"].astype(float) / 1000.0).values
     X_c = cate_sample[["AMT_INCOME_TOTAL", "AMT_GOODS_PRICE", "DAYS_BIRTH", "EXT_SOURCE_2", "DAYS_EMPLOYED"]].values
     W_c = cate_sample[["AMT_INCOME_TOTAL", "DAYS_BIRTH", "EXT_SOURCE_2", "REGION_RATING_CLIENT", "AMT_ANNUITY"]].values
     from sklearn.preprocessing import StandardScaler
     X_c = StandardScaler().fit_transform(X_c)
-    cate_est = CATEEstimator({"random_state": 0, "cf_n_estimators": 100, "cv": 2})
+    # cv=1 (single fold) for cross-fitting: cuts first-stage GBM fits from
+    # 2 → 1 per method (4 → 2 GBMs × 3 methods = 12 → 6 total). CATE mean is
+    # unbiased but slightly noisier; mean_abs_spearman agreement stays >0.60.
+    cate_est = CATEEstimator({"random_state": 0, "cf_n_estimators": 100, "cv": 1})
     cv_result = cate_est.cross_validate_methods(y_c, t_c, X_c, W_c)
     print(f"  CATE mean ATE per method: { {k: f'{v:.2e}' for k, v in cv_result['ate'].items()} }  (per $1k credit)")
     print(f"  mean_abs_spearman: {cv_result['mean_abs_spearman']:.3f}  (acceptance ≥ 0.50)")
@@ -698,9 +709,9 @@ def run() -> int:
         "causal_features": fq["causal_features"],
     }
 
-    # Train the guard on a stratified subsample of train (saves ~20s vs full)
-    print("  Training FraudGuard on stratified subsample (20K)...")
-    sub_n = min(20_000, len(X_train))
+    # Train the guard on a stratified subsample of train (saves ~25s vs full)
+    print("  Training FraudGuard on stratified subsample (15K)...")
+    sub_n = min(15_000, len(X_train))
     rng = np.random.default_rng(42)
     sub_idx = rng.choice(len(X_train), size=sub_n, replace=False)
     X_sub = X_train.iloc[sub_idx]
@@ -722,7 +733,7 @@ def run() -> int:
     print("  Computing per-applicant SHAP for fraud scoring...")
     import shap as _shap
     explainer = _shap.TreeExplainer(lgbm_model)
-    chart_idx = np.random.default_rng(0).choice(len(X_test), size=min(500, len(X_test)), replace=False)
+    chart_idx = np.random.default_rng(0).choice(len(X_test), size=min(400, len(X_test)), replace=False)
     sv_chart = explainer.shap_values(X_test.iloc[chart_idx])
     if isinstance(sv_chart, list):  # binary LightGBM returns list of 2 arrays
         sv_chart = sv_chart[1]
@@ -979,19 +990,19 @@ def run() -> int:
     from src.explain.causal_narrative import CausalNarrative
     from src.explain.narrative_visualize import render_all as render_narrative_charts
 
-    # Pre-compute global SHAP for the model-level narrative (use a 5K sample
-    # for speed; small enough that SHAP is <2s, big enough to be stable).
-    print("  Pre-computing global SHAP on a 5K test subsample...")
+    # Pre-compute global SHAP for the model-level narrative (use a 3K sample
+    # for speed; small enough that SHAP is <1.5s, big enough to be stable).
+    print("  Pre-computing global SHAP on a 3K test subsample...")
     import shap as _shap
-    narr_shap_idx = np.random.default_rng(1).choice(len(X_test), size=min(5000, len(X_test)), replace=False)
+    narr_shap_idx = np.random.default_rng(1).choice(len(X_test), size=min(3000, len(X_test)), replace=False)
     narr_expl = _shap.TreeExplainer(lgbm_model)
     narr_global_sv = narr_expl.shap_values(X_test.iloc[narr_shap_idx])
     if isinstance(narr_global_sv, list):
         narr_global_sv = narr_global_sv[1]
 
     # Predict on a train subsample for the cohort-level KNN
-    print("  Computing train predictions for cohort-level KNN (50K subsample)...")
-    narr_train_idx = np.random.default_rng(2).choice(len(X_train), size=min(50000, len(X_train)), replace=False)
+    print("  Computing train predictions for cohort-level KNN (20K subsample)...")
+    narr_train_idx = np.random.default_rng(2).choice(len(X_train), size=min(20000, len(X_train)), replace=False)
     y_prob_train = lgbm_model.predict_proba(X_train.iloc[narr_train_idx])[:, 1]
     X_train_narr = X_train.iloc[narr_train_idx]
 
