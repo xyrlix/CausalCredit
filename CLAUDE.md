@@ -23,7 +23,7 @@ All build / lint / test / run entry points are in the `Makefile`:
 The end-to-end pipeline (16 steps, fully working):
 
 ```bash
-python -m src.run_pipeline    # ~220s on CPU, 16 steps, Home Credit 307K rows
+python -m src.run_pipeline    # ~125s on CPU, 16 steps, Home Credit 307K rows (M8.6f)
 ```
 
 **19 PNGs** land in `output/figures/` (11 from M0–M6 + 3 from M7 anti-fraud: `12_fraud_score_routing.png`, `13_packaging_scatter.png`, `14_denoising_effect.png` + 3 from M8.1 fairness: `12_fairness_group_rates.png`, `13_fairness_metric_gaps.png`, `14_fairness_status.png` + 2 from M8.2 narrative: `15_causal_waterfall.png`, `16_narrative_card.png`).
@@ -42,7 +42,7 @@ HomeCreditLoader          src/data/home_credit_loader.py     307,511 × 122 CSV
     └─> FeatureBuilder    src/features/builder.py            LabelEncoder + select
         └─> CausalFeatureBuilder src/features/causal_features.py    5 hand-built ratio features
     └─> LGBMFeaturePruning  src/run_pipeline.py STEP 5.5    drop zero-gain features
-    └─> LightGBMTrainer   src/models/train.py               500 trees + 3-fold CV + GPU/Optuna opt-in
+    └─> LightGBMTrainer   src/models/train.py               300 trees + 3-fold CV + 60% subsample + early-stop + GPU/Optuna opt-in
     └─> ModelEvaluator    src/models/evaluate.py             AUC/Acc/F1 + IsotonicCalibrator
     └─> CausalDiscovery   src/causal/discovery.py            PC + NOTEARS + domain-knowledge fusion
     └─> DoWhy ATE         src/causal/estimate.py             CausalModel + 4 refuters + E-value
@@ -134,7 +134,7 @@ Everything else listed in `docs/CausalCredit_完整实现计划书.md` §4.1–4
 
 ## Test layout
 
-212 tests across 29 files (~12s):
+396 tests across 37 files (~80s):
 
 | Test file | Cases | What it covers |
 |-----------|------:|----------------|

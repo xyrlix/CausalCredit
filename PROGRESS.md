@@ -380,7 +380,7 @@ X_train, X_test = X_train[keep], X_test[keep]
 | 反欺诈三件套 (FraudGuard) | ~35s | 训练 50K + 1K 批量 + 3 张图 |
 | 公平性切片 (4 维度 × 50K) | ~1s | 30K 测试集 |
 | 因果叙事 (3 申请人 × 4 段) | ~8s | 5K 全局 SHAP + 60 次扰动 |
-| **Pipeline 总耗时** | **~220s** | 16 步端到端, CPU 即可 |
+| **Pipeline 总耗时** | **~125s** | 16 步端到端, CPU 即可 (M8.6f: 60% sub + 早停 + cv=1) |
 
 ---
 
