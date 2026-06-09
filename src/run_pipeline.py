@@ -345,16 +345,22 @@ def run() -> int:
     # =========================================================================
     print_section("STEP 6: MODEL TRAINING")
     t_step = time.time()
-    # 6a. sklearn GBT — 3-fold CV on a 20K subset (just for the AUC baseline)
+    t6a = time.time()
+    # 6a. sklearn GBT — 2-fold CV on a 20K subset (just for the AUC baseline).
+    # M8.6g: dropped from 3-fold → 2-fold. GBT is the slow single-threaded
+    # sklearn baseline; LightGBM is the actual production model. Halving folds
+    # cuts GBT step time by ~33% with negligible impact on the printed AUC.
     gbt_sub_idx = np.random.RandomState(42).choice(len(X_train), size=min(20000, len(X_train)), replace=False)
     X_gbt = X_train.iloc[gbt_sub_idx].reset_index(drop=True)
     y_gbt = y_train.iloc[gbt_sub_idx].reset_index(drop=True)
     gb_trainer = GBTrainer()
-    cv = gb_trainer.train_cv(X_gbt, y_gbt, n_folds=3)
-    print(f"  GBT  CV AUC:        {cv['cv_auc_mean']:.4f} ± {cv['cv_auc_std']:.4f}  (20K subset)")
+    cv = gb_trainer.train_cv(X_gbt, y_gbt, n_folds=2)
+    print(f"  GBT  CV AUC:        {cv['cv_auc_mean']:.4f} ± {cv['cv_auc_std']:.4f}  (20K subset, 2-fold)")
     print(f"  GBT  CV Accuracy:   {cv['cv_accuracy_mean']:.4f} ± {cv['cv_accuracy_std']:.4f}")
     gb_model = gb_trainer.train_final(X_gbt, y_gbt)
+    print(f"  6a GBT (CV + final): {time.time()-t6a:.2f}s")
 
+    t6b = time.time()
     # 6b. LightGBM — downstream model for SHAP, DiCE, decision reports.
     # 60% stratified subsample of train (~130K rows) + early stopping
     # (per-fold 15% eval holdout, patience=50). Early stopping typically
@@ -364,15 +370,19 @@ def run() -> int:
         X_train, y_train, n_folds=3, subsample_frac=0.6,
         early_stopping_rounds=50, eval_fraction=0.15,
     )
+    t6b_cv = time.time() - t6b
     best_it = cv_lgbm.get("best_iteration_mean")
     print(f"  LGBM CV AUC:        {cv_lgbm['cv_auc_mean']:.4f} ± {cv_lgbm['cv_auc_std']:.4f}  "
           f"(60% subsample, {int(0.6*len(X_train))} rows, "
           f"early-stop @ {int(best_it) if best_it else '?'} trees, max=300)")
+    t6b_final = time.time()
     lgbm_model = lgbm_trainer.train_final(
         X_train, y_train, subsample_frac=0.6,
         early_stopping_rounds=50, eval_fraction=0.15,
     )
     print(f"  LightGBM trained: best_iter={lgbm_model.best_iteration_}, n_estimators={lgbm_model.n_estimators}")
+    t6b_total = time.time() - t6b
+    print(f"  6b LGBM: CV={t6b_cv:.2f}s + final={time.time()-t6b_final:.2f}s = {t6b_total:.2f}s")
     _t(t_step, "step_6_model_training", step_times)
 
     # =========================================================================
