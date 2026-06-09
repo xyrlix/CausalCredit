@@ -1,8 +1,8 @@
 # CausalCredit 开发进展记录
 
 > **最后更新**: 2026-06-08 | **环境**: CPU (Python 3.10, `ldq_cc` conda env)  
-> **状态**: 16 个里程碑全部完成 ✅ (M0-M7 + M8.1 公平性 + M8.2 因果叙事 + M8.3 服务化 + M8.4 多语言 + M8.5 系列 5 件 + M8.6 验证深化 4 件 + M8.6d-end 验证修复 + M8.6e 性能深化 + M8.6f 早停 + 二次优化)  
-> **当前**: 端到端 16 步 **125.3s** 热跑 ✅ (-41.4% vs M8.6d-end), 37 测试文件 / **396 用例** 全过 (80.3s), AUC 0.7733 / F1 0.0744 / CATE 0.587 / Refutation 0.75 / Fairness 4/4 WARNING
+> **状态**: 19 个里程碑全部完成 ✅ (M0-M7 + M8.1 公平性 + M8.2 因果叙事 + M8.3 服务化 + M8.4 多语言 + M8.5 系列 5 件 + M8.6 验证深化 4 件 + M8.6d-end 验证修复 + M8.6e 性能深化 + M8.6f 早停 + 二次优化 + M8.6g GBT 2-fold 优化)  
+> **当前**: 端到端 16 步 **101.9s** 热跑 ✅ (-52.3% vs M8.6d-end), 37 测试文件 / **396 用例** 全过 (80.3s), AUC 0.7733 / F1 0.0744 / CATE 0.587 / Refutation 0.75 / Fairness 4/4 WARNING
 
 ---
 
@@ -56,6 +56,7 @@
 | 19 | (HEAD~1) | M8.6d-end 验证修复: dedup feature columns (EXT_SOURCE_* 与 secondary 重名) + PC collinearity drop (|ρ|>0.98) + fairness `min_group_size=100` 过滤小样本组 + BENCHMARKS/PROGRESS 增补 |
 | 20 | (HEAD~1) | M8.6e 性能深化: Step 6 (60% sub) + Step 7 (10K 2-fold OOF) + Step 10 (first-stage 100 trees) + Step 14 (20K train, 100 trees, 500 chart), 端到端 213.85s → 152.85s (-28.5%) |
 | 21 | (HEAD) | M8.6f 早停 + 二次优化: LightGBM 早停 (15% eval holdout, patience=50) + Step 7 走早停 + Step 10 cv=2→1 + Step 14 15K/400 chart + Step 16 3K/20K, 端到端累计 213.85s → 125.3s (-41.4%) |
+| 22 | (HEAD) | M8.6g GBT 2-fold 优化: 诊断发现 GBT (sklearn 单线程) = 48.7s 是 step 6 真瓶颈, 3-fold → 2-fold 砍 19.5s; LightGBM 沿用 60% sub + 早停; 端到端累计 213.85s → 101.9s (-52.3%); GBT AUC 0.7321→0.7259 (纯打印, LightGBM AUC 0.7733 不变) |
 
 > M0-M4 完整代码在 main 分支。后续每个里程碑均经 `python -m src.run_pipeline` 验证 + 单测全过。
 
@@ -380,7 +381,7 @@ X_train, X_test = X_train[keep], X_test[keep]
 | 反欺诈三件套 (FraudGuard) | ~35s | 训练 50K + 1K 批量 + 3 张图 |
 | 公平性切片 (4 维度 × 50K) | ~1s | 30K 测试集 |
 | 因果叙事 (3 申请人 × 4 段) | ~8s | 5K 全局 SHAP + 60 次扰动 |
-| **Pipeline 总耗时** | **~125s** | 16 步端到端, CPU 即可 (M8.6f: 60% sub + 早停 + cv=1) |
+| **Pipeline 总耗时** | **~102s** | 16 步端到端, CPU 即可 (M8.6g: GBT 2-fold + LGBM 60% sub + 早停 + cv=1) |
 
 ---
 
@@ -1201,6 +1202,83 @@ M8.6e 后 Step 6 仍占 91s / 60%, 早停是最自然的下一个优化: 模型�
 
 ---
 
+## M8.6g — GBT 2-fold 优化 (累计 -52.3%)
+
+### 动机
+
+M8.6f 把 Step 6 压到 72.7s 仍占端到端 58%, 进一步分析发现 GBT (sklearn `GradientBoostingClassifier`) = 48.7s, 远超 LightGBM 的 22.8s。GBT 是单线程 sklearn 实现, 处理 20K × 246 维 × 3-fold 极慢。
+
+GBT 在 pipeline 中**仅作"sklearn GBT 基线 vs LightGBM"对比打印**, 实际下游 (SHAP / DiCE / 反欺诈 / 决策) 全部用 LightGBM。**GBT CV fold 数 3→2 是零下游影响优化**。
+
+### 端到端 16 步实测 (2026-06-09, M8.6g 后, 101.9s)
+
+| 步骤 | 内容 | 耗时 (s) | % | Δ vs M8.6f |
+|------|------|------:|--:|----------:|
+| 1-5.5 | 加载 / 校验 / 清洗 / 多表 / 特征 / 划分 / 预筛 | 13.5 | 13% | 同 M8.6f |
+| **6a** | **GBT (sklearn, 2-fold CV on 20K + final)** | **29.1** | 29% | **-19.6s (-40%)** |
+| **6b** | **LightGBM (3-fold CV on 60% + final + 早停)** | **22.0** | 22% | 同 M8.6f |
+| 7 | 评估 + Isotonic 校准 (2-fold OOF 10K) | 3.1 | 3% | 同 M8.6f |
+| 8-13 | 因果发现 / ATE / CATE / 反驳 / SHAP / 反事实 / 决策 | 16.5 | 16% | 同 M8.6f |
+| 14 | 反欺诈三件套 (FraudGuard 15K) | 14.3 | 14% | 同 M8.6f |
+| 15-16 | 公平性 / 叙事 | 4.0 | 4% | 同 M8.6f |
+| | **总耗时** | **101.9** | | **-23.4s (M8.6g 单独)** |
+
+### 累计效果
+
+| 阶段 | 端到端 | Step 6 | Step 7 | Step 10 | Step 14 | 累计变化 |
+|------|------:|------:|------:|------:|------:|----------|
+| M8.6d-end | 213.85s | 106.9s | 24.5s | 20.1s | 35.4s | baseline |
+| M8.6e | 152.85s | 91.4s | 6.0s | 12.2s | 17.3s | **-28.5%** |
+| M8.6f | 125.3s | 72.7s | 3.2s | 9.1s | 14.9s | **-41.4%** |
+| **M8.6g** | **101.9s** | **51.1s** | **3.1s** | **9.0s** | **14.3s** | **-52.3%** (节省 112s) |
+
+### 关键发现 (Step 6 内部耗时拆解)
+
+诊断打印 (新增) 把 Step 6 拆成 6a (GBT) + 6b (LGBM):
+
+| 阶段 | 6a GBT (sklearn) | 6b LGBM (lightgbm) | Step 6 合计 |
+|------|------------------:|-------------------:|------------:|
+| M8.6d-end (3-fold GBT) | 48.7s | ~58s (含 LightGBM 3-fold) | 106.9s |
+| M8.6f (3-fold GBT) | 48.7s | 22.8s (60% sub + 早停) | 72.7s |
+| **M8.6g (2-fold GBT)** | **29.1s** | **22.0s** | **51.1s** |
+
+**GBT 是 sklearn 单线程 bottleneck**:
+- sklearn `GradientBoostingClassifier` 不支持 `n_jobs` 并行
+- 20K 行 × 246 维 × 200 trees × 3-fold = 大量顺序构建
+- 早停对 sklearn GBT 不适用 (它本来就没有 overfitting 机制)
+
+### GBT 2-fold 决策
+
+**改变** (`src/run_pipeline.py` line 348-356):
+- `gb_trainer.train_cv(X_gbt, y_gbt, n_folds=3)` → `n_folds=2`
+- 打印标签: "(20K subset)" → "(20K subset, 2-fold)"
+
+**风险**:
+- GBT CV 估计 std 略增 (3→2 fold, 但 GBT 仅作打印基线, 不参与下游任何决策)
+- GBT AUC 0.7321 → 0.7259 = -0.006 (基线小幅下降, 但**LightGBM AUC 0.7733 完全不变**)
+- 整条 GBT 在 pipeline 中只用于打印一行 "GBT CV AUC: 0.73 vs LightGBM CV AUC: 0.77" 的对比
+
+**缓解**:
+- 既然 GBT 不影响下游, 2-fold 完全可以接受
+- 若用户真要 3-fold 精度, 后续可改用 `sklearn.ensemble.HistGradientBoostingClassifier` (多线程, 估 5-10x 加速) 或 `lightgbm` 替代 GBT
+- 这一行 0.006 的差异不影响任何决策 / 路由 / 公平性指标
+
+### 单测影响
+
+- `GBTrainer.train_cv` 无 API 变化 (只是 `n_folds` 形参默认 5, 调用方传 2)
+- 全量 396 用例 80.3s 全过 (无回归)
+
+### 影响
+
+- 端到端 **213.85s → 101.9s, 累计 -52.3%, 节省 112s**
+- LightGBM AUC **不变** (0.7733), CATE 0.587 不变, Refutation 0.75 不变
+- 仅 GBT 基线 AUC -0.006 (纯打印, 不影响任何下游模块)
+- 端到端首次跑进 **2 分钟内 (101.9s)**, 满足"演示前 1 小时内可重跑 35+ 次"的工程目标
+- 累计节省 112s, 等于每次重跑可省 1.9 分钟
+- README.md §亮点 / 看板 / 数据对比表 / §测试布局 / PROGRESS.md 本节 / BENCHMARKS.md §8.1 全部同步更新
+
+---
+
 ## 后续迭代方向（未做）
 
 - ~~8 表 JOIN（bureau / previous_application / POS / installments / credit_card）→ 多表因果特征~~ ✅ M5 完成
@@ -1217,6 +1295,7 @@ M8.6e 后 Step 6 仍占 91s / 60%, 早停是最自然的下一个优化: 模型�
 - ~~M8.6d-end 验证修复（特征列去重 + PC 共线性剔除 + 公平性 min_group_size）~~ ✅ M8.6d-end 完成
 - ~~**M8.6e 性能深化（4 步优化, 端到端 -28.5%, 213.85s → 152.85s, AUC -0.004）**~~ ✅ M8.6e 完成
 - ~~**M8.6f 早停 + 二次优化（5 步, 端到端累计 -41.4%, 152.85s → 125.3s, AUC -0.003, CATE -0.083 仍 > 0.50）**~~ ✅ M8.6f 完成
+- ~~**M8.6g GBT 2-fold 优化（端到端累计 -52.3%, 125.3s → 101.9s, LightGBM AUC 不变 0.7733, GBT AUC -0.006 纯打印）**~~ ✅ M8.6g 完成
 - **P0 提案文档落地（6.15 提案前关键交付）**: 蓝图一页纸 / Demo 演示脚本 / 答辩 Q&A 手册 / 代码走读速查 4 份, 落到 `docs/`
 - **多表聚合 polars 改写**: pandas 单线程 ~27s 可降到 ~5s
 - **反欺诈伪标签升级**: 用反欺诈团队人工标注的真实种子集替换业务规则

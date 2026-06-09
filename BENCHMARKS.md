@@ -1,6 +1,6 @@
 # CausalCredit 性能基准 (BENCHMARKS)
 
-> **最后更新**: 2026-06-08 (M8.6f 早停 + 二次优化, 端到端 -41.4%) | **环境**: CPU (Python 3.10, `ldq_cc` conda env) | **数据集**: Home Credit Default Risk 完整 307,511 行 × 122 列 + 5 张二级表 (~80M 行)
+> **最后更新**: 2026-06-09 (M8.6g GBT 2-fold 优化, 端到端 -52.3%) | **环境**: CPU (Python 3.10, `ldq_cc` conda env) | **数据集**: Home Credit Default Risk 完整 307,511 行 × 122 列 + 5 张二级表 (~80M 行)
 > **复现命令**：
 > - **冷跑**（首次 / 删 cache）: `rm -rf output/cache && python -m src.run_pipeline` (~150 秒)
 > - **热跑**（已 cache）: `python -m src.run_pipeline` (~125 秒)
@@ -126,10 +126,10 @@
 
 ---
 
-## 8. 端到端运行时 (16 步, CPU, M8.6f 后)
+## 8. 端到端运行时 (16 步, CPU, M8.6g 后)
 
-> 来自 `output/decision_reports/pipeline_timings.json`（M8.6f 早停 + 二次优化后, 含 16 步）
-> **本轮基准日期**: 2026-06-08, 总耗时 **125.3s** (热跑)
+> 来自 `output/decision_reports/pipeline_timings.json`（M8.6g GBT 2-fold 优化后, 含 16 步）
+> **本轮基准日期**: 2026-06-09, 总耗时 **101.9s** (热跑)
 
 ### 8.1 冷跑 vs 热跑对比
 
@@ -139,34 +139,39 @@
 | M5+ 优化 (热, 15 步) | 184.5s | 111.8s | — | — | — | M7+M8.1 之前 |
 | M8.6 验证深化 (热, 16 步) | 213.85s | 106.9s | 24.5s | 20.1s | 35.4s | 公平性+叙事+CCGS |
 | M8.6e 性能深化 (热, 16 步) | 152.85s | 91.4s | 6.0s | 12.2s | 17.3s | 4 步 subsample 优化 |
-| **M8.6f 早停 (热, 16 步, 当前)** | **125.3s** | **72.7s** | **3.2s** | **9.1s** | **14.9s** | **+LightGBM 早停** |
-| 较 M8.6 优化 | -88.6s | -34.2s | -21.3s | -11.0s | -20.5s | **-41.4%** |
+| M8.6f 早停 (热, 16 步) | 125.3s | 72.7s | 3.2s | 9.1s | 14.9s | +LightGBM 早停 |
+| **M8.6g GBT 2-fold (热, 16 步, 当前)** | **101.9s** | **51.1s** | **3.1s** | **9.0s** | **14.3s** | **+GBT 3→2 fold** |
+| 较 M8.6 优化 | -112.0s | -55.8s | -21.4s | -11.1s | -21.1s | **-52.3%** |
 
-### 8.2 热跑 16 步明细 (2026-06-08, M8.6f 后)
+### 8.2 热跑 16 步明细 (2026-06-09, M8.6g 后)
 
 | Step | 内容 | 耗时 (s) | % | 备注 |
 |:---:|------|---------:|---:|------|
-| 1 | Data loading (307K × 122) | 2.26 | 1.8% | parquet 快路径 |
-| 2 | Data validation | 0.77 | 0.6% | — |
-| 3 | Data cleaning | 0.83 | 0.7% | sentinel 修复 + drop low-var |
-| **3.5** | **Multi-table aggregation (cache hit)** | **2.12** | **1.7%** | **M5+ 优化**: 65s→2s |
-| 4 | Feature engineering (265 列) | 1.62 | 1.3% | 20 app + 246 secondary (deduped) |
-| 5 | Train/test split (stratified) | 0.67 | 0.5% | — |
-| **5.5** | **Feature pruning (LightGBM gain pre-screen)** | **4.08** | **3.3%** | **M5+ 优化**: 砍 52 个 0-gain 特征, 265→213 |
-| **6** | **Model training (LightGBM × 3-fold CV, 213 特征)** | **72.71** | **58.0%** | **瓶颈**, 60% sub + 早停 @ 186 trees |
-| 7 | Evaluation + Isotonic calibration (2-fold OOF) | 3.20 | 2.6% | 10K subsample, 2-fold OOF |
-| 8 | Causal discovery (PC + NOTEARS, 20 features) | 1.07 | 0.9% | 5K 子集 (M8.6d 加 collinearity drop) |
-| 9 | ATE estimation (DoWhy) | 0.37 | 0.3% | 8K 子集 |
-| **10** | **CATE estimation (3 EconML methods)** | **9.08** | **7.2%** | first-stage 100 trees + cv=1 (M8.6f) |
-| 11 | Refutation (4 refuters) | 0.64 | 0.5% | — |
-| 12 | SHAP four-quadrant (213 features, 5K samples) | 3.23 | 2.6% | TreeSHAP |
-| 13 | Counterfactual + 3 decision reports | 3.47 | 2.8% | DiCE 3 samples |
-| **14** | **Anti-fraud (3 件套 + 5 级路由)** | **14.91** | **11.9%** | 15K train, 100 trees, 400 chart (M8.6f) |
-| 15 | Fairness audit (4 slices × 3 metrics) | 1.29 | 1.0% | M8.1 + M8.6d min_group_size=100 |
-| 16 | Causal narrative (3-level + DAG paths) | 2.70 | 2.2% | M8.2 + M8.6f 3K SHAP / 20K KNN |
-| | **总耗时** | **125.30** | | **CPU 单核, 热跑** |
+| 1 | Data loading (307K × 122) | 2.20 | 2.2% | parquet 快路径 |
+| 2 | Data validation | 0.78 | 0.8% | — |
+| 3 | Data cleaning | 0.85 | 0.8% | sentinel 修复 + drop low-var |
+| **3.5** | **Multi-table aggregation (cache hit)** | **2.12** | **2.1%** | **M5+ 优化**: 65s→2s |
+| 4 | Feature engineering (265 列) | 1.63 | 1.6% | 20 app + 246 secondary (deduped) |
+| 5 | Train/test split (stratified) | 0.68 | 0.7% | — |
+| **5.5** | **Feature pruning (LightGBM gain pre-screen)** | **3.31** | **3.2%** | **M5+ 优化**: 砍 52 个 0-gain 特征, 265→213 |
+| **6** | **Model training (GBT 2-fold + LightGBM 3-fold CV, 213 特征)** | **51.10** | **50.1%** | **瓶颈**, GBT 29.1s + LGBM 22.0s (M8.6g) |
+| 7 | Evaluation + Isotonic calibration (2-fold OOF) | 3.05 | 3.0% | 10K subsample, 2-fold OOF |
+| 8 | Causal discovery (PC + NOTEARS, 20 features) | 1.01 | 1.0% | 5K 子集 (M8.6d 加 collinearity drop) |
+| 9 | ATE estimation (DoWhy) | 0.36 | 0.4% | 8K 子集 |
+| **10** | **CATE estimation (3 EconML methods)** | **8.98** | **8.8%** | first-stage 100 trees + cv=1 (M8.6f) |
+| 11 | Refutation (4 refuters) | 0.64 | 0.6% | — |
+| 12 | SHAP four-quadrant (213 features, 5K samples) | 3.27 | 3.2% | TreeSHAP |
+| 13 | Counterfactual + 3 decision reports | 3.40 | 3.3% | DiCE 3 samples |
+| **14** | **Anti-fraud (3 件套 + 5 级路由)** | **14.32** | **14.1%** | 15K train, 100 trees, 400 chart (M8.6f) |
+| 15 | Fairness audit (4 slices × 3 metrics) | 1.26 | 1.2% | M8.1 + M8.6d min_group_size=100 |
+| 16 | Causal narrative (3-level + DAG paths) | 2.70 | 2.7% | M8.2 + M8.6f 3K SHAP / 20K KNN |
+| | **总耗时** | **101.90** | | **CPU 单核, 热跑** |
 
-### 8.3 M8.6e + M8.6f 累计优化
+**Step 6 内部拆解 (M8.6g 诊断打印新增)**:
+- 6a GBT (sklearn, 2-fold CV on 20K + final): 29.10s (M8.6f 3-fold 时 48.7s, -19.6s)
+- 6b LightGBM (3-fold CV on 60% sub + final + 早停 @ 186 trees): 22.00s (与 M8.6f 持平)
+
+### 8.3 M8.6e + M8.6f + M8.6g 累计优化
 
 | # | Step | 优化 | 节省 | AUC 影响 |
 |---|------|------|-----:|---------:|
@@ -179,18 +184,21 @@
 | M8.6f-3 | Step 10 | CATE cv=2→1 (cross-fit GBM 12→6) | -3.1s | CATE 0.670→0.587 (仍 > 0.50) |
 | M8.6f-4 | Step 14 | FraudGuard 20K→15K + chart 500→400 | -2.4s | 持平 |
 | M8.6f-5 | Step 16 | SHAP 5K→3K + KNN 50K→20K | -1.6s | 持平 |
-| | **合计** | | **-88.6s (-41.4%)** | **-0.007 AUC, CATE -0.083** |
+| **M8.6g-1** | **Step 6a** | **GBT (sklearn) CV 3-fold → 2-fold** | **-19.6s** | **GBT -0.006 (纯打印), LightGBM 不变** |
+| | **合计** | | **-108.2s (-52.3%)** | **-0.007 AUC, CATE -0.083, GBT -0.006 (纯打印)** |
 
-**AUC trade-off**: 0.7802 → 0.7733 (-0.007) 来自累计 subsample + 早停。**CATE 一致性 0.548 → 0.587** (净 +0.04, 仍 > 0.50 阈值)。综合判定 **值得**。
+**AUC trade-off**: 0.7802 → 0.7733 (-0.007) 来自累计 subsample + 早停; M8.6g 仅影响 GBT 基线 -0.006 (纯打印)。**CATE 一致性 0.548 → 0.587** (净 +0.04, 仍 > 0.50 阈值)。综合判定 **值得**。
 
 **早停实测**: CV 阶段停在 186/300 trees (62%), final 停在 227/300 (76%)。模型未触及过拟合点, 但提前 ~38% 节省训练时间, 几乎无 AUC 损失 (≤ 0.001)。
 
-**剩余优化空间**（不在 M8.6f 范围）：
-1. **Step 6 (73s, 58%)** — LightGBM GPU build → 预期 30-40s
-2. **Step 14 (15s)** — FraudGuard + SHAP 已接近下限 (n_est=100, 15K 训练)
+**GBT 2-fold 决策依据**: sklearn GBT 单线程, 20K × 246 维 × 200 trees × 3-fold 大量顺序构建, 是 Step 6 真瓶颈 (48.7s vs LightGBM 22.8s)。GBT 在 pipeline 中**仅作"sklearn vs LightGBM"对比打印**, 实际下游 (SHAP / DiCE / 反欺诈 / 决策) 全部用 LightGBM, **2-fold 不影响任何下游决策**。
+
+**剩余优化空间**（不在 M8.6g 范围）：
+1. **Step 6 (51s, 50%)** — GBT 换 HistGradientBoostingClassifier / LightGBM 多线程替代 → 估 5-10x 加速, 20s 内完成; LightGBM GPU build → 估 30-40s
+2. **Step 14 (14s)** — FraudGuard + SHAP 已接近下限 (n_est=100, 15K 训练)
 3. **Step 10 (9s)** — first-stage 100 trees + cv=1 已是组合最小
 
-**理论下限**: 125s → ~60s (GPU Step 6) / ~40s (GPU + n_est=200 + 进一步 sub-sampling)。
+**理论下限**: 102s → ~50s (GBT 换多线程) / ~30s (再 GPU Step 6) / ~25s (全 GPU + 进一步 sub-sampling)。
 
 ### 8.4 M5+ 已实现优化 (本次)
 

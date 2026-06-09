@@ -7,7 +7,7 @@
 
 ---
 
-## 🎯 6 大核心亮点
+## 🎯 14 大核心亮点（M0–M8.6g 全部已实现）
 
 | # | 亮点 | 解决的问题 | 实现入口 | 状态 |
 |:-:|------|-----------|----------|:----:|
@@ -28,7 +28,7 @@
 
 ---
 
-## 📊 进展看板（18 个里程碑全部完成：M0-M7 + M8.1-M8.6）
+## 📊 进展看板（19 个里程碑全部完成：M0–M7 + M8.1–M8.6 + M8.6d-end + M8.6e/f/g）
 
 | # | 里程碑 | 关键产出 | 累计效果 | Commit |
 |:-:|--------|----------|---------|--------|
@@ -47,11 +47,12 @@
 | **M8.4** | **多语言 + 港式本地化** ⭐ | `render_markdown(language=)` 加 zh-HK (繁體) / en 参数, 港式措辞 | **跨境 / 国际化就绪** | (M8.4) |
 | **M8.5** | **5 件套** ⭐ | M8.5c API 中间件 (rate limit / API key / PII) + M8.5d Streamlit i18n + M8.5e SHA-256 manifest + **M8.5f Oaxaca-Blinder 因果公平性分解** + M8.5g 利率优化 | 体验 + 公平性再深化 | `3e9737d` |
 | **M8.6** | **验证深化 4 件** ⭐ | **M8.6a TemporalGuard 防泄漏** + **M8.6b BLP 检验** + **M8.6c CATE 稳定性** + **M8.6d CCGS 金字塔** | 73 新测试, 320→393 | `81d692a` |
-| **M8.6d-end** | **验证修复 + 公平性小样本组过滤** ⭐ | 特征列去重 (EXT_SOURCE_* 与 secondary 重名) + PC 共线性列剔除 (|ρ|>0.98) + 公平性 `min_group_size=100` 过滤 + BENCHMARKS/PROGRESS 增补 | 3 新测试, 393→**396** | (HEAD~1) |
-| **M8.6e** | **性能深化** ⭐ | 4 步优化: Step 6 (60% sub) + Step 7 (10K 2-fold OOF) + Step 10 (first-stage 100 trees) + Step 14 (20K train, 100 trees, 500 chart) | **213.85s → 152.85s (-28.5%, -61s)**, AUC -0.004, CATE +0.122 | (HEAD~1) |
-| **M8.6f** | **早停 + 二次优化** ⭐ | LightGBM 早停 (15% eval holdout, patience=50, 停在 ~186/300 trees) + Step 7 走早停 + Step 10 cv=2→1 + Step 14 15K/400 chart + Step 16 3K SHAP/20K KNN | **152.85s → 125.3s (-18%, 累计 -41.4%)**, AUC -0.003, CATE 0.670→0.587 仍 > 0.50 | (HEAD) |
+| **M8.6d-end** | **验证修复 + 公平性小样本组过滤** ⭐ | 特征列去重 (EXT_SOURCE_* 与 secondary 重名) + PC 共线性列剔除 (|ρ|>0.98) + 公平性 `min_group_size=100` 过滤 + BENCHMARKS/PROGRESS 增补 | 3 新测试, 393→**396** | `5efb85a` |
+| **M8.6e** | **性能深化** ⭐ | 4 步优化: Step 6 (60% sub) + Step 7 (10K 2-fold OOF) + Step 10 (first-stage 100 trees) + Step 14 (20K train, 100 trees, 500 chart) | **213.85s → 152.85s (-28.5%, -61s)**, AUC -0.004, CATE +0.122 | `3f041f8` |
+| **M8.6f** | **早停 + 二次优化** ⭐ | LightGBM 早停 (15% eval holdout, patience=50, 停在 ~186/300 trees) + Step 7 走早停 + Step 10 cv=2→1 + Step 14 15K/400 chart + Step 16 3K SHAP/20K KNN | **152.85s → 125.3s (-18%, 累计 -41.4%)**, AUC -0.003, CATE 0.670→0.587 仍 > 0.50 | `620cb95` |
+| **M8.6g** | **GBT 2-fold 优化** ⭐ | 诊断发现 GBT (sklearn 单线程) = 48.7s 是 step 6 真瓶颈, 3-fold → 2-fold 砍 19.5s; LightGBM 沿用 60% sub + 早停 | **125.3s → 101.9s (-18.7%, 累计 -52.3%)**, AUC 不变 0.7733, GBT AUC 0.7321→0.7259 (纯打印) | `f8cde0f` (HEAD) |
 
-**总投入**: 37 个测试文件 / **396 个测试用例** (全跑 80.3s) / **569 行反欺诈代码 + 432 行公平性代码 + 489 行叙事代码 + 1100 行 M8.6 验证代码 + M8.6e/f 性能代码** / **19 张图表** / **3 份决策报告 + 公平性 + fraud + causal_narrative_v2 字段** / **19 份设计文档**
+**总投入**: 37 个测试文件 / **396 个测试用例** (全跑 80.3s) / **569 行反欺诈代码 + 432 行公平性代码 + 489 行叙事代码 + 1100 行 M8.6 验证代码 + M8.6e/f/g 性能代码** / **19 张图表** / **3 份决策报告 + 公平性 + fraud + causal_narrative_v2 字段** / **19 份设计文档**
 
 ---
 
@@ -66,7 +67,7 @@
 ### 一键运行
 
 ```bash
-# 端到端 pipeline (16 步, 含 STEP 3.5 多表 + STEP 14 反欺诈 + STEP 15 公平性 + STEP 16 叙事, ~125 秒 CPU 热跑, M8.6f 后)
+# 端到端 pipeline (16 步, 含 STEP 3.5 多表 + STEP 14 反欺诈 + STEP 15 公平性 + STEP 16 叙事, ~102 秒 CPU 热跑, M8.6g 后)
 /home/tony/anaconda3/envs/ldq_cc/bin/python -m src.run_pipeline
 
 # FastAPI 后端
@@ -118,7 +119,7 @@ STEP 3.5   多表聚合 ⭐       bureau / prev / POS / INST / CC → 246 聚合
 STEP 4     特征工程          causal-guided subset + label encoding
 STEP 5     划分              70/30 stratified train/test
 STEP 5.5   特征预筛选        L1-style: drop zero-gain features (216 of 265)
-STEP 6     训练              LightGBM (500 trees, GPU/Optuna opt-in) + 3-fold CV
+STEP 6     训练              LightGBM (300 trees, 60% sub + 早停) + sklearn GBT (2-fold 基线) + GPU/Optuna opt-in
 STEP 7     评估 + 校准       AUC/Acc/F1 + Isotonic Calibration
 STEP 8     因果发现          PC + NOTEARS 融合 + 领域 DAG 注入 (43 边)
 STEP 9     ATE 估计          DoWhy CausalModel + 4 类 refuter + E-value
@@ -140,19 +141,19 @@ STEP 16    因果叙事深化 ⭐   3 层叙事 (model/cohort/individual) + DAG 
 
 ## 📈 实测数据对比（Home Credit 30 万行）
 
-| 指标 | M2 单表 | M5 8 表 | M5+ (CPU 优化) | M6 (GPU+Optuna) | M7 (+反欺诈) | M8.6d-end (修复) | M8.6e (性能) | **M8.6f (早停, 当前)** | 累计提升 |
-|------|------:|-----------:|-----------:|-----------:|-----------:|-----------:|-----------:|-----------:|-----:|
-| 特征数 | 30 | 265 | 216 | 211 | 211 | 213 | 213 | **213** | +183 |
-| 3-fold CV AUC | 0.7503 | 0.7763 | 0.7756 | **0.7803** | **0.7803** | 0.7765 | 0.7727 | **0.7716** | +0.021 |
-| 测试集 AUC-ROC | 0.7547 | 0.7803 | 0.7803 | **0.7803** | **0.7803** | 0.7802 | 0.7759 | **0.7733** | +0.019 |
-| 测试集 F1 (default) | 0.0344 | 0.0770 | 0.0735 | **0.0735** | **0.0735** | 0.0740 | 0.0744 | **0.0744** | +0.040 |
-| ATE (`AMT_CREDIT` → `TARGET`) | +0.0092 | +0.0092 | +0.0092 | +0.0092 | +0.0092 | +0.0092 | +0.0092 | +0.0092 | — |
-| CATE 一致性 (3 方法) | 0.578 | 0.548 | 0.548 | 0.548 | 0.548 | 0.548 | 0.670 | **0.587** | +0.009 |
-| 反驳验证 | 3/4 | 3/4 | 3/4 | 3/4 | 3/4 | 3/4 | 3/4 | **3/4** | — |
-| 公平性 4 切片 | — | — | — | — | — | 4/4 WARNING | 4/4 WARNING | **4/4 WARNING** (min_group_size=100) | — |
-| 决策报告 | 3 份 | 3 份 | 3 份 | 3 份 | + fraud 字段 | + fraud + fairness + narrative_v2 | 同 M8.6d-end | **同 M8.6d-end** | — |
-| 单元测试 | 85 / 1.34s | 98 / 1.44s | 101 / 1.46s | 108 / 7.69s | 133 / 8.0s | 396 / 86.3s | 396 / 66.4s | **396 / 80.3s** | +311 |
-| Pipeline 端到端耗时 | 84.8s | 244.9s (冷) | 184.5s (热) | 184.5s (热) | 194.9s (热) | 213.85s (热) | 152.85s (热) | **125.3s (热)** | +41s |
+| 指标 | M2 单表 | M5 8 表 | M5+ (CPU 优化) | M6 (GPU+Optuna) | M7 (+反欺诈) | M8.6d-end (修复) | M8.6e (性能) | M8.6f (早停) | **M8.6g (GBT 2-fold, 当前)** | 累计提升 |
+|------|------:|-----------:|-----------:|-----------:|-----------:|-----------:|-----------:|-----------:|-----------:|-----:|
+| 特征数 | 30 | 265 | 216 | 211 | 211 | 213 | 213 | 213 | **213** | +183 |
+| 3-fold CV AUC | 0.7503 | 0.7763 | 0.7756 | **0.7803** | **0.7803** | 0.7765 | 0.7727 | 0.7716 | **0.7716** | +0.021 |
+| 测试集 AUC-ROC | 0.7547 | 0.7803 | 0.7803 | **0.7803** | **0.7803** | 0.7802 | 0.7759 | 0.7733 | **0.7733** | +0.019 |
+| 测试集 F1 (default) | 0.0344 | 0.0770 | 0.0735 | **0.0735** | **0.0735** | 0.0740 | 0.0744 | 0.0744 | **0.0744** | +0.040 |
+| ATE (`AMT_CREDIT` → `TARGET`) | +0.0092 | +0.0092 | +0.0092 | +0.0092 | +0.0092 | +0.0092 | +0.0092 | +0.0092 | **+0.0092** | — |
+| CATE 一致性 (3 方法) | 0.578 | 0.548 | 0.548 | 0.548 | 0.548 | 0.548 | 0.670 | 0.587 | **0.587** | +0.009 |
+| 反驳验证 | 3/4 | 3/4 | 3/4 | 3/4 | 3/4 | 3/4 | 3/4 | 3/4 | **3/4** | — |
+| 公平性 4 切片 | — | — | — | — | — | 4/4 WARNING | 4/4 WARNING | 4/4 WARNING (min_group_size=100) | **4/4 WARNING** | — |
+| 决策报告 | 3 份 | 3 份 | 3 份 | 3 份 | + fraud 字段 | + fraud + fairness + narrative_v2 | 同 M8.6d-end | 同 M8.6d-end | **同 M8.6d-end** | — |
+| 单元测试 | 85 / 1.34s | 98 / 1.44s | 101 / 1.46s | 108 / 7.69s | 133 / 8.0s | 396 / 86.3s | 396 / 66.4s | 396 / 80.3s | **396 / 80.3s** | +311 |
+| Pipeline 端到端耗时 | 84.8s | 244.9s (冷) | 184.5s (热) | 184.5s (热) | 194.9s (热) | 213.85s (热) | 152.85s (热) | 125.3s (热) | **101.9s (热)** | +17s |
 
 > 完整 per-step 耗时、ATE/CATE/Refutation 数值、反欺诈 routing 分布见 [`BENCHMARKS.md`](BENCHMARKS.md)
 
@@ -202,13 +203,13 @@ STEP 16    因果叙事深化 ⭐   3 层叙事 (model/cohort/individual) + DAG 
 | Equal Opportunity gap | max TPR − min TPR | < 0.05 |
 | Disparate Impact ratio | min sel_rate / max sel_rate | ≥ 0.80 (EEOC 80% 规则) |
 
-**实测 (Home Credit 50K 测试集)**:
+**实测 (Home Credit 50K 测试集, M8.6g)**:
 
 ```
-gender              status=WARNING  DP=0.004  EO=0.012  DI=0.538
-age_group           status=WARNING  DP=0.010  EO=0.040  DI=0.082
-income_group        status=WARNING  DP=0.004  EO=0.021  DI=0.511
-education_group     status=WARNING  DP=0.008  EO=0.050  DI=0.000
+gender              status=WARNING  DP=0.004  EO=0.013  DI=0.463  (n_groups=3, filtered=['UNKNOWN'])
+age_group           status=WARNING  DP=0.008  EO=0.045  DI=0.042  (n_groups=3)
+income_group        status=WARNING  DP=0.002  EO=0.008  DI=0.640  (n_groups=3)
+education_group     status=WARNING  DP=0.006  EO=0.037  DI=0.136  (n_groups=4, filtered=['academic'])
 ```
 
 **关键解读**:
@@ -350,7 +351,7 @@ CausalCredit/
 │   ├── frontend/              # Streamlit 4 页 + M8.5d i18n
 │   ├── monitoring/            # PSI 漂移检测 (3 层) + 路由分布 PSI
 │   └── run_pipeline.py        # 16 步端到端入口
-├── tests/                     # 33 个测试文件, 393 用例 (含 M8.5f + M8.6a-d 73 个新测试)
+├── tests/                     # 37 个测试文件, 396 用例 (含 M8.5f + M8.6a-d 73 个新测试)
 ├── configs/                   # config.yaml
 ├── scripts/                   # run_api / run_demo / run_tests / setup_env
 ├── data/
@@ -479,6 +480,7 @@ output/
 - ~~**M8.4 多语言 + 港式本地化** — 粤语 / 繁体 / 香港场景~~ → ✅ M8.4 完成
 - ~~**M8.5 系列** — 中间件 / i18n / 模型清单 / Oaxaca 因果公平性 / 利率优化~~ → ✅ M8.5 完成
 - ~~**M8.6 系列** — TemporalGuard / BLP / CATE 稳定性 / CCGS 金字塔~~ → ✅ M8.6 完成
+- ~~**M8.6e/f/g 性能深化** — 213.85s → 101.9s (-52.3%, 节省 112s)~~ → ✅ M8.6g 完成
 - **M8.7 验证金字塔接入 STEP 17** — 把 L1-L4 跑通并注入 pipeline_summary.json, 输出 `pyramid_score.json`
 - **多表聚合 polars 改写** — pandas 单线程 ~27s, 估可降到 ~5s
 - **反欺诈伪标签升级** — 用反欺诈团队人工标注的真实种子集替换业务规则
@@ -491,7 +493,7 @@ output/
 
 | 文档 | 用途 |
 |------|------|
-| [`PROGRESS.md`](PROGRESS.md) | 21 个里程碑详细记录 (M0-M7 + M8.1-M8.6 + M8.6d-end + M8.6e + M8.6f) |
+| [`PROGRESS.md`](PROGRESS.md) | 19 个里程碑详细记录 (M0-M7 + M8.1-M8.6 + M8.6d-end + M8.6e + M8.6f + M8.6g) |
 | [`BENCHMARKS.md`](BENCHMARKS.md) | 性能基准 + 反欺诈 routing 分布 + 单测覆盖 |
 | [`CLAUDE.md`](CLAUDE.md) | 给 Claude Code 的协作指引 (架构 / 命令 / 约定) |
 | [`docs/`](docs/) | 19 份原始分析文档 (需求 / 设计 / 验证标准) |
